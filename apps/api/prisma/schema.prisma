@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ShareResourceType {
+  DATA_ROOM
+  FOLDER
+  FILE
+}
+
+enum ShareMode {
+  PUBLIC
+  PERMISSIONED
+}
+
+enum ShareRole {
+  VIEWER
+  EDITOR
+}
+
+enum FileStatus {
+  PENDING
+  READY
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  dataRooms     DataRoom[]
+  folders       Folder[]
+  files         File[]
+  sharesCreated Share[]      @relation("ShareCreatedBy")
+  shareGrants   ShareGrant[]
+
+  @@map("users")
+}
+
+model DataRoom {
+  id        String   @id @default(uuid())
+  name      String
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  folders Folder[]
+  files   File[]
+
+  @@index([ownerId])
+  @@map("data_rooms")
+}
+
+// Adjacency-list tree: parentId = null means the folder sits at the
+// data room root. See README "How it scales" for the closure-table
+// alternative once subtree queries get hot at large fan-out.
+model Folder {
+  id          String   @id @default(uuid())
+  name        String
+  dataRoomId  String
+  dataRoom    DataRoom @relation(fields: [dataRoomId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Folder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Folder[] @relation("FolderChildren")
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  files File[]
+
+  // Name must be unique among siblings within the same data room.
+  @@unique([dataRoomId, parentId, name])
+  @@index([dataRoomId, parentId])
+  @@map("folders")
+}
+
+model File {
+  id           String     @id @default(uuid())
+  name         String
+  sizeBytes    BigInt
+  mimeType     String
+  storageKey   String     @unique
+  dataRoomId   String
+  dataRoom     DataRoom   @relation(fields: [dataRoomId], references: [id], onDelete: Cascade)
+  // null folderId = file lives at the data room root, alongside top-level folders.
+  folderId     String?
+  folder       Folder?    @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy   User       @relation(fields: [uploadedById], references: [id])
+  // Pending until the client confirms the presigned S3 upload finished;
+  // lets us hide half-uploaded files from listings.
+  status       FileStatus @default(PENDING)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([dataRoomId, folderId, name])
+  @@index([dataRoomId, folderId])
+  @@map("files")
+}
+
+// Polymorphic target (resourceType + resourceId) instead of three nullable
+// FKs so a Data Room, Folder, or File can all be shared through one model.
+// Prisma can't enforce the FK for a polymorphic relation, so resourceId
+// existence is validated in the service layer, not the database.
+model Share {
+  id           String            @id @default(uuid())
+  resourceType ShareResourceType
+  resourceId   String
+  mode         ShareMode
+  // Set only when mode = PUBLIC; the opaque value in the shareable link.
+  token        String?           @unique
+  createdById  String
+  createdBy    User              @relation("ShareCreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime          @default(now())
+  revokedAt    DateTime?
+
+  grants ShareGrant[]
+
+  @@index([resourceType, resourceId])
+  @@map("shares")
+}
+
+// Only meaningful when the parent Share.mode = PERMISSIONED.
+model ShareGrant {
+  id        String    @id @default(uuid())
+  shareId   String
+  share     Share     @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      ShareRole @default(VIEWER)
+  createdAt DateTime  @default(now())
+
+  @@unique([shareId, userId])
+  @@map("share_grants")
+}
