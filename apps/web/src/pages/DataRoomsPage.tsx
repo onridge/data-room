@@ -159,6 +159,9 @@ export const DataRoomsPage = () => {
           <p className="mt-1 text-sm text-muted-foreground">
             Create your first data room to start uploading documents.
           </p>
+          <Button size="sm" className="mt-4" onClick={() => setIsCreateOpen(true)}>
+            New Data Room
+          </Button>
         </div>
       ) : (
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -170,7 +173,7 @@ export const DataRoomsPage = () => {
               <button
                 type="button"
                 onClick={() => navigate(`/data-rooms/${dataRoom.id}`)}
-                className="block w-full pr-6 text-left"
+                className="block w-full cursor-pointer pr-6 text-left"
               >
                 <p className="truncate text-row-primary font-medium text-foreground">
                   {dataRoom.name}
@@ -182,7 +185,7 @@ export const DataRoomsPage = () => {
               <button
                 type="button"
                 onClick={() => openDeleteDialog(dataRoom)}
-                className="absolute top-3 right-3 grid size-6 place-items-center rounded-sm text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                className="absolute top-3 right-3 grid size-6 cursor-pointer place-items-center rounded-sm text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
                 aria-label="Delete"
               >
                 <Trash2 className="size-3.5" />

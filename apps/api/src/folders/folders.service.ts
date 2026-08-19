@@ -9,6 +9,7 @@ interface SubtreeSummaryRow {
   subfolderCount: number;
   fileCount: number;
   totalSizeBytes: bigint;
+  activeShareCount: number;
 }
 
 @Injectable()
@@ -148,13 +149,18 @@ export class FoldersService {
       SELECT
         (SELECT COUNT(*)::int FROM subtree) - 1 AS "subfolderCount",
         (SELECT COUNT(*)::int FROM files WHERE "folderId" IN (SELECT id FROM subtree)) AS "fileCount",
-        (SELECT COALESCE(SUM("sizeBytes"), 0)::bigint FROM files WHERE "folderId" IN (SELECT id FROM subtree)) AS "totalSizeBytes"
+        (SELECT COALESCE(SUM("sizeBytes"), 0)::bigint FROM files WHERE "folderId" IN (SELECT id FROM subtree)) AS "totalSizeBytes",
+        (SELECT COUNT(*)::int FROM shares WHERE "revokedAt" IS NULL AND (
+          ("resourceType" = 'FOLDER' AND "resourceId" IN (SELECT id FROM subtree))
+          OR ("resourceType" = 'FILE' AND "resourceId" IN (SELECT id FROM files WHERE "folderId" IN (SELECT id FROM subtree)))
+        )) AS "activeShareCount"
     `;
 
     const row = rows[0];
     return {
       subfolderCount: row.subfolderCount,
       fileCount: row.fileCount,
+      activeShareCount: row.activeShareCount,
       totalSizeBytes: row.totalSizeBytes.toString(),
     };
   }

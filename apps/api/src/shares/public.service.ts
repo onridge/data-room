@@ -20,7 +20,17 @@ export class PublicService {
     if (!name) {
       throw new NotFoundException('Shared item not found');
     }
-    return { resourceType: share.resourceType, resourceId: share.resourceId, name };
+    const owner = await this.prisma.user.findUnique({
+      where: { id: share.createdById },
+      select: { name: true },
+    });
+    return {
+      resourceType: share.resourceType,
+      resourceId: share.resourceId,
+      name,
+      ownerName: owner?.name ?? 'Unknown',
+      sharedAt: share.createdAt,
+    };
   }
 
   // folderId omitted = the share's own root: itself if it's a Folder share,
