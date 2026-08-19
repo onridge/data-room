@@ -110,6 +110,9 @@ export const DataRoomsPage = () => {
           <p className="mt-1 text-sm text-muted-foreground">
             Create your first data room to start uploading documents.
           </p>
+          <Button size="sm" className="mt-4" onClick={() => setIsCreateOpen(true)}>
+            New Data Room
+          </Button>
         </div>
       ) : (
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -118,7 +121,7 @@ export const DataRoomsPage = () => {
               key={dataRoom.id}
               type="button"
               onClick={() => navigate(`/data-rooms/${dataRoom.id}`)}
-              className="rounded-lg border border-border bg-card p-4 text-left hover:border-input"
+              className="cursor-pointer rounded-lg border border-border bg-card p-4 text-left hover:border-input"
             >
               <p className="text-row-primary font-medium text-foreground">{dataRoom.name}</p>
               <p className="mt-1 text-xs text-muted-foreground">

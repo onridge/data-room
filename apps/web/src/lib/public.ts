@@ -6,6 +6,8 @@ export interface PublicShareInfo {
   resourceType: ShareResourceType;
   resourceId: string;
   name: string;
+  ownerName: string;
+  sharedAt: string;
 }
 
 export const getPublicShareInfo = async (token: string) => {

@@ -36,6 +36,7 @@ export interface SubtreeSummary {
   subfolderCount: number;
   fileCount: number;
   totalSizeBytes: string;
+  activeShareCount: number;
 }
 
 export const getContents = async (token: string, dataRoomId: string, folderId?: string) => {

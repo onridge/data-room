@@ -33,7 +33,7 @@ export const UploadPanel = ({ items, onDismiss, onRetry }: UploadPanelProps) => 
         <button
           type="button"
           onClick={onDismiss}
-          className="grid size-6 place-items-center rounded-sm text-muted-foreground hover:bg-secondary"
+          className="grid size-6 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-secondary"
         >
           <X className="size-4" />
         </button>

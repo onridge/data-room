@@ -1,16 +1,25 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { Eye, FileText, Folder as FolderIcon } from 'lucide-react';
+import { Eye, FileText, Folder as FolderIcon, Lock, User } from 'lucide-react';
 import { getPublicContents, getPublicShareInfo, viewPublicFile } from '../lib/public';
 import type { PublicShareInfo } from '../lib/public';
 import type { FolderContents } from '../lib/folders';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
+import { PdfViewerDialog } from '../components/PdfViewerDialog';
 
 interface BreadcrumbEntry {
   id: string;
   name: string;
 }
+
+const Badge = ({ icon, children }: { icon: ReactNode; children: ReactNode }) => (
+  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-modal-caption text-muted-foreground">
+    {icon}
+    {children}
+  </span>
+);
 
 // A public link is rooted at whatever the owner shared, not the data
 // room's actual root — so the breadcrumb trail is built client-side as
@@ -24,6 +33,7 @@ export const PublicSharePage = () => {
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(null);
 
   const currentFolderId = breadcrumb.at(-1)?.id;
 
@@ -56,14 +66,14 @@ export const PublicSharePage = () => {
     setBreadcrumb((prev) => prev.slice(0, index + 1));
   };
 
-  const handleViewFile = async (fileId: string) => {
+  const handleViewFile = async (fileId: string, fileName: string) => {
     if (!token) return;
-    const newTab = window.open('', '_blank');
     try {
       const objectUrl = await viewPublicFile(token, fileId);
-      if (newTab) newTab.location.href = objectUrl;
+      setPdfViewerTarget({ url: objectUrl, name: fileName });
     } catch {
-      newTab?.close();
+      // The eye button just does nothing on failure — no dedicated error UI
+      // for this yet.
     }
   };
 
@@ -80,29 +90,46 @@ export const PublicSharePage = () => {
   if (shareInfo.resourceType === 'FILE') {
     return (
       <div className="p-8">
-        <div className="flex items-center gap-2.5">
-          <FileText className="size-5 shrink-0 text-muted-foreground" />
+        <div className="flex items-center gap-2">
+          <Badge icon={<User className="size-3" />}>Shared by {shareInfo.ownerName}</Badge>
+          <Badge icon={<Lock className="size-3" />}>Read-only</Badge>
+        </div>
+        <div className="mt-3 flex items-center gap-2.5">
+          <FileText className="size-5 shrink-0 text-red-500 dark:text-red-400" />
           <h1 className="text-page-title font-semibold text-foreground">{shareInfo.name}</h1>
         </div>
         <button
           type="button"
-          onClick={() => handleViewFile(shareInfo.resourceId)}
-          className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:brightness-90"
+          onClick={() => handleViewFile(shareInfo.resourceId, shareInfo.name)}
+          className="mt-4 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:brightness-90"
         >
           <Eye className="size-3.5" />
           View PDF
         </button>
+        <PdfViewerDialog
+          open={!!pdfViewerTarget}
+          onOpenChange={(open) => !open && setPdfViewerTarget(null)}
+          fileUrl={pdfViewerTarget?.url ?? null}
+          fileName={pdfViewerTarget?.name ?? ''}
+        />
       </div>
     );
   }
 
+  const totalSizeBytes = contents?.files.reduce((sum, file) => sum + Number(file.sizeBytes), 0) ?? 0;
+
   return (
     <div className="p-8">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2">
+        <Badge icon={<User className="size-3" />}>Shared by {shareInfo.ownerName}</Badge>
+        <Badge icon={<Lock className="size-3" />}>Read-only</Badge>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
         <button
           type="button"
           onClick={() => navigateToBreadcrumb(-1)}
-          className="hover:text-foreground"
+          className="cursor-pointer hover:text-foreground"
         >
           {shareInfo.name}
         </button>
@@ -112,7 +139,7 @@ export const PublicSharePage = () => {
             <button
               type="button"
               onClick={() => navigateToBreadcrumb(index)}
-              className="hover:text-foreground"
+              className="cursor-pointer hover:text-foreground"
             >
               {entry.name}
             </button>
@@ -123,6 +150,13 @@ export const PublicSharePage = () => {
       <h1 className="mt-2 text-page-title font-semibold text-foreground">
         {breadcrumb.at(-1)?.name ?? shareInfo.name}
       </h1>
+      {contents ? (
+        <p className="mt-1 text-modal-caption text-muted-foreground">
+          {contents.folders.length} folder{contents.folders.length === 1 ? '' : 's'} ·{' '}
+          {contents.files.length} file{contents.files.length === 1 ? '' : 's'} ·{' '}
+          {formatBytes(totalSizeBytes)}
+        </p>
+      ) : null}
 
       {isLoading ? (
         <p className="mt-8 text-sm text-muted-foreground">Loading…</p>
@@ -139,7 +173,7 @@ export const PublicSharePage = () => {
               key={folder.id}
               type="button"
               onClick={() => navigateToFolder(folder.id, folder.name)}
-              className="flex h-(--dr-table-row-h) w-full items-center gap-2.5 border-b border-border px-3 text-left last:border-b-0 hover:bg-muted/60"
+              className="flex h-(--dr-table-row-h) w-full cursor-pointer items-center gap-2.5 border-b border-border px-3 text-left last:border-b-0 hover:bg-muted/60"
             >
               <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
               <span className="truncate text-row-primary text-foreground">{folder.name}</span>
@@ -150,7 +184,7 @@ export const PublicSharePage = () => {
               key={file.id}
               className="flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
             >
-              <FileText className="size-4 shrink-0 text-muted-foreground" />
+              <FileText className="size-4 shrink-0 text-red-500 dark:text-red-400" />
               <span className="min-w-0 flex-1 truncate text-row-primary text-foreground">
                 {file.name}
               </span>
@@ -159,8 +193,8 @@ export const PublicSharePage = () => {
               </span>
               <button
                 type="button"
-                onClick={() => handleViewFile(file.id)}
-                className="grid size-7 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => handleViewFile(file.id, file.name)}
+                className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                 aria-label="View"
               >
                 <Eye className="size-3.5" />
@@ -169,6 +203,13 @@ export const PublicSharePage = () => {
           ))}
         </div>
       )}
+
+      <PdfViewerDialog
+        open={!!pdfViewerTarget}
+        onOpenChange={(open) => !open && setPdfViewerTarget(null)}
+        fileUrl={pdfViewerTarget?.url ?? null}
+        fileName={pdfViewerTarget?.name ?? ''}
+      />
     </div>
   );
 };

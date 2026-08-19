@@ -31,7 +31,9 @@ import { formatBytes } from '../lib/format';
 import { UploadPanel } from '../components/UploadPanel';
 import type { UploadItem } from '../components/UploadPanel';
 import { ShareDialog } from '../components/ShareDialog';
+import { listShares } from '../lib/shares';
 import type { ShareResourceType } from '../lib/shares';
+import { PdfViewerDialog } from '../components/PdfViewerDialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -86,6 +88,7 @@ export const DataRoomDetailPage = () => {
   const [fileDeleteTarget, setFileDeleteTarget] = useState<FileEntry | null>(null);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
   const [fileDeleteError, setFileDeleteError] = useState<string | null>(null);
+  const [fileDeleteShareCount, setFileDeleteShareCount] = useState(0);
 
   const [fileRenameTarget, setFileRenameTarget] = useState<FileEntry | null>(null);
   const [fileRenameValue, setFileRenameValue] = useState('');
@@ -102,6 +105,8 @@ export const DataRoomDetailPage = () => {
     resourceId: string;
     name: string;
   } | null>(null);
+
+  const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(null);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
@@ -207,14 +212,12 @@ export const DataRoomDetailPage = () => {
 
   const handleViewFile = async (file: FileEntry) => {
     if (!accessToken || !id) return;
-    // Opened synchronously so the browser still ties it to the click and
-    // doesn't treat it as an unsolicited popup once the fetch resolves.
-    const newTab = window.open('', '_blank');
     try {
       const objectUrl = await viewFile(accessToken, id, file.id);
-      if (newTab) newTab.location.href = objectUrl;
+      setPdfViewerTarget({ url: objectUrl, name: file.name });
     } catch {
-      newTab?.close();
+      // The eye button just does nothing on failure — no dedicated error UI
+      // for this yet.
     }
   };
 
@@ -278,6 +281,19 @@ export const DataRoomDetailPage = () => {
       setDeleteSummary(summary);
     } catch {
       // Warning falls back to a generic message below if this fails.
+    }
+  };
+
+  const openFileDeleteDialog = async (file: FileEntry) => {
+    setFileDeleteTarget(file);
+    setFileDeleteError(null);
+    setFileDeleteShareCount(0);
+    if (!accessToken || !id) return;
+    try {
+      const shares = await listShares(accessToken, 'FILE', file.id);
+      setFileDeleteShareCount(shares.length);
+    } catch {
+      // Warning just doesn't show if this fails.
     }
   };
 
@@ -425,7 +441,7 @@ export const DataRoomDetailPage = () => {
         <button
           type="button"
           onClick={() => navigateToFolder(undefined)}
-          className="hover:text-foreground"
+          className="cursor-pointer hover:text-foreground"
         >
           {dataRoom?.name ?? '…'}
         </button>
@@ -435,7 +451,7 @@ export const DataRoomDetailPage = () => {
             <button
               type="button"
               onClick={() => navigateToFolder(entry.id)}
-              className="hover:text-foreground"
+              className="cursor-pointer hover:text-foreground"
             >
               {entry.name}
             </button>
@@ -517,7 +533,7 @@ export const DataRoomDetailPage = () => {
           <button
             type="button"
             onClick={() => setUploadValidationError(null)}
-            className="shrink-0 text-destructive/70 hover:text-destructive"
+            className="shrink-0 cursor-pointer text-destructive/70 hover:text-destructive"
           >
             <X className="size-4" />
           </button>
@@ -541,8 +557,17 @@ export const DataRoomDetailPage = () => {
           <div className="mt-8 rounded-lg border border-dashed border-input p-8 text-center">
             <p className="text-sm font-medium text-foreground">Folder is empty</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Drag and drop PDFs here, or use the Upload button.
+              Drag and drop PDFs here, or use the buttons below.
             </p>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+                <UploadIcon className="size-3.5" />
+                Upload
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setIsCreateOpen(true)}>
+                New Folder
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="mt-6 overflow-hidden rounded-lg border border-border">
@@ -554,7 +579,7 @@ export const DataRoomDetailPage = () => {
                 <button
                   type="button"
                   onClick={() => navigateToFolder(folder.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
                 >
                   <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
                   <span className="truncate text-row-primary text-foreground">{folder.name}</span>
@@ -565,7 +590,7 @@ export const DataRoomDetailPage = () => {
                     onClick={() =>
                       setShareTarget({ resourceType: 'FOLDER', resourceId: folder.id, name: folder.name })
                     }
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Share"
                   >
                     <Share2 className="size-3.5" />
@@ -573,7 +598,7 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => openRename(folder)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Rename"
                   >
                     <Pencil className="size-3.5" />
@@ -581,7 +606,7 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => openDeleteDialog(folder)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Delete"
                   >
                     <Trash2 className="size-3.5" />
@@ -594,7 +619,7 @@ export const DataRoomDetailPage = () => {
                 key={file.id}
                 className="group flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
               >
-                <FileText className="size-4 shrink-0 text-muted-foreground" />
+                <FileText className="size-4 shrink-0 text-red-500 dark:text-red-400" />
                 <span className="min-w-0 flex-1 truncate text-row-primary text-foreground">
                   {file.name}
                 </span>
@@ -607,7 +632,7 @@ export const DataRoomDetailPage = () => {
                     onClick={() =>
                       setShareTarget({ resourceType: 'FILE', resourceId: file.id, name: file.name })
                     }
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Share"
                   >
                     <Share2 className="size-3.5" />
@@ -615,7 +640,7 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => handleViewFile(file)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="View"
                   >
                     <Eye className="size-3.5" />
@@ -623,7 +648,7 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => openMoveDialog(file)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Move"
                   >
                     <FolderInput className="size-3.5" />
@@ -631,18 +656,15 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => openFileRename(file)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Rename"
                   >
                     <Pencil className="size-3.5" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setFileDeleteTarget(file);
-                      setFileDeleteError(null);
-                    }}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => openFileDeleteDialog(file)}
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Delete"
                   >
                     <Trash2 className="size-3.5" />
@@ -736,7 +758,7 @@ export const DataRoomDetailPage = () => {
               type="button"
               disabled={isMoving || moveTarget?.folderId === null}
               onClick={() => handleMoveFile(undefined)}
-              className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+              className="flex w-full cursor-pointer items-center gap-2 border-b border-border px-3 py-2 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:cursor-default disabled:opacity-50"
             >
               <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
               Root
@@ -748,7 +770,7 @@ export const DataRoomDetailPage = () => {
                 disabled={isMoving || moveTarget?.folderId === option.id}
                 onClick={() => handleMoveFile(option.id)}
                 style={{ paddingLeft: `${12 + option.depth * 16}px` }}
-                className="flex w-full items-center gap-2 border-b border-border py-2 pr-3 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                className="flex w-full cursor-pointer items-center gap-2 border-b border-border py-2 pr-3 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:cursor-default disabled:opacity-50"
               >
                 <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
                 {option.name}
@@ -770,6 +792,12 @@ export const DataRoomDetailPage = () => {
                 : 'Calculating what will be deleted…'}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteSummary && deleteSummary.activeShareCount > 0 ? (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {deleteSummary.activeShareCount} active share link
+              {deleteSummary.activeShareCount === 1 ? '' : 's'} will stop working.
+            </p>
+          ) : null}
           {deleteError ? <p className="text-sm text-destructive">{deleteError}</p> : null}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -797,6 +825,12 @@ export const DataRoomDetailPage = () => {
             <AlertDialogTitle>Delete &ldquo;{fileDeleteTarget?.name}&rdquo;?</AlertDialogTitle>
             <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
+          {fileDeleteShareCount > 0 ? (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {fileDeleteShareCount} active share link{fileDeleteShareCount === 1 ? '' : 's'} will
+              stop working.
+            </p>
+          ) : null}
           {fileDeleteError ? <p className="text-sm text-destructive">{fileDeleteError}</p> : null}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -823,6 +857,13 @@ export const DataRoomDetailPage = () => {
           resourceName={shareTarget.name}
         />
       ) : null}
+
+      <PdfViewerDialog
+        open={!!pdfViewerTarget}
+        onOpenChange={(open) => !open && setPdfViewerTarget(null)}
+        fileUrl={pdfViewerTarget?.url ?? null}
+        fileName={pdfViewerTarget?.name ?? ''}
+      />
     </div>
   );
 };
