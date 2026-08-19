@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { FileStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDataRoomDto } from './dto/create-data-room.dto';
 import { UpdateDataRoomDto } from './dto/update-data-room.dto';
@@ -36,5 +37,32 @@ export class DataRoomsService {
   async remove(ownerId: string, id: string) {
     await this.findOneOwned(ownerId, id);
     await this.prisma.dataRoom.delete({ where: { id } });
+  }
+
+  // folderId omitted/undefined = the data room's own root, not "any folder".
+  async getContents(ownerId: string, dataRoomId: string, folderId?: string) {
+    await this.findOneOwned(ownerId, dataRoomId);
+
+    if (folderId) {
+      const folder = await this.prisma.folder.findFirst({
+        where: { id: folderId, dataRoomId },
+      });
+      if (!folder) {
+        throw new NotFoundException('Folder not found');
+      }
+    }
+
+    const [folders, files] = await Promise.all([
+      this.prisma.folder.findMany({
+        where: { dataRoomId, parentId: folderId ?? null },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.file.findMany({
+        where: { dataRoomId, folderId: folderId ?? null, status: FileStatus.READY },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    return { folders, files };
   }
 }

@@ -81,13 +81,20 @@ model Folder {
   parent      Folder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
   children    Folder[] @relation("FolderChildren")
   createdById String
-  createdBy   User     @relation(fields: [createdById], references: [id])
+  // Cascade (not the default RESTRICT): createdById always equals the data
+  // room's owner today, so this row is already gone via the DataRoom
+  // cascade by the time a User delete reaches here. Leaving it RESTRICT
+  // makes Postgres's constraint-check order race that cascade and fail.
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   files File[]
 
-  // Name must be unique among siblings within the same data room.
+  // Name must be unique among siblings within the same data room. Postgres
+  // doesn't treat two NULLs as equal, so this alone doesn't catch conflicts
+  // between two root-level folders (parentId = NULL) — see the hand-written
+  // partial unique index in migration 20260819130000_root_level_unique_names.
   @@unique([dataRoomId, parentId, name])
   @@index([dataRoomId, parentId])
   @@map("folders")
@@ -105,13 +112,15 @@ model File {
   folderId     String?
   folder       Folder?    @relation(fields: [folderId], references: [id], onDelete: Cascade)
   uploadedById String
-  uploadedBy   User       @relation(fields: [uploadedById], references: [id])
+  uploadedBy   User       @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
   // Pending until the client confirms the presigned S3 upload finished;
   // lets us hide half-uploaded files from listings.
   status       FileStatus @default(PENDING)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  // Same NULL-vs-NULL caveat as Folder — see the partial unique index in
+  // migration 20260819130000_root_level_unique_names for root-level files.
   @@unique([dataRoomId, folderId, name])
   @@index([dataRoomId, folderId])
   @@map("files")
@@ -129,7 +138,7 @@ model Share {
   // Set only when mode = PUBLIC; the opaque value in the shareable link.
   token        String?           @unique
   createdById  String
-  createdBy    User              @relation("ShareCreatedBy", fields: [createdById], references: [id])
+  createdBy    User              @relation("ShareCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
   createdAt    DateTime          @default(now())
   revokedAt    DateTime?
 
