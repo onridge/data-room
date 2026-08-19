@@ -84,7 +84,12 @@ export class AuthService {
   }
 
   async me(userId: string) {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    // The user behind a still-valid JWT may have been deleted since the
+    // token was issued — treat that the same as "not authenticated".
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException();
+    }
     return this.toPublicUser(user);
   }
 

@@ -1,4 +1,5 @@
 import { useAuth } from '../lib/auth-context';
+import { Button } from '@/components/ui/button';
 
 export const DataRoomsPage = () => {
   const { user, logout } = useAuth();
@@ -6,18 +7,15 @@ export const DataRoomsPage = () => {
   return (
     <div className="p-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Data Rooms</h1>
-        <div className="flex items-center gap-3 text-sm text-gray-500">
+        <h1 className="text-page-title font-semibold text-foreground">Data Rooms</h1>
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <span>{user?.email}</span>
-          <button
-            onClick={logout}
-            className="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50"
-          >
+          <Button variant="outline" size="sm" onClick={logout}>
             Log out
-          </button>
+          </Button>
         </div>
       </div>
-      <p className="mt-4 text-sm text-gray-500">
+      <p className="mt-4 text-sm text-muted-foreground">
         Data room list goes here — next stage.
       </p>
     </div>
