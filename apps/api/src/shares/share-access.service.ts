@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { ShareResourceType } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ShareMode, ShareResourceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface ChainNode {
@@ -33,6 +33,51 @@ export class ShareAccessService {
       },
     });
     return !!grant;
+  }
+
+  // Resolves an unauthenticated public-link token to its active Share —
+  // used by the /public routes, which carry no user at all.
+  async resolvePublicShare(token: string) {
+    const share = await this.prisma.share.findFirst({
+      where: { token, mode: ShareMode.PUBLIC, revokedAt: null },
+    });
+    if (!share) {
+      throw new NotFoundException('Link not found or revoked');
+    }
+    return share;
+  }
+
+  // True if resourceType/resourceId is the share's own resource or nested
+  // inside it — bounds a public link to exactly the subtree the owner
+  // shared, not the rest of the data room.
+  async isWithinShare(
+    share: { resourceType: ShareResourceType; resourceId: string },
+    resourceType: ShareResourceType,
+    resourceId: string,
+  ) {
+    const chain = await this.buildChain(resourceType, resourceId);
+    if (!chain) return false;
+    return chain.nodes.some(
+      (node) => node.resourceType === share.resourceType && node.resourceId === share.resourceId,
+    );
+  }
+
+  async resolveResourceName(resourceType: ShareResourceType, resourceId: string) {
+    if (resourceType === ShareResourceType.DATA_ROOM) {
+      return (await this.prisma.dataRoom.findUnique({ where: { id: resourceId } }))?.name;
+    }
+    if (resourceType === ShareResourceType.FOLDER) {
+      return (await this.prisma.folder.findUnique({ where: { id: resourceId } }))?.name;
+    }
+    return (await this.prisma.file.findUnique({ where: { id: resourceId } }))?.name;
+  }
+
+  async resolveDataRoomId(resourceType: ShareResourceType, resourceId: string) {
+    if (resourceType === ShareResourceType.DATA_ROOM) return resourceId;
+    if (resourceType === ShareResourceType.FOLDER) {
+      return (await this.prisma.folder.findUnique({ where: { id: resourceId } }))?.dataRoomId;
+    }
+    return (await this.prisma.file.findUnique({ where: { id: resourceId } }))?.dataRoomId;
   }
 
   private async buildChain(resourceType: ShareResourceType, resourceId: string) {
