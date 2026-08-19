@@ -185,6 +185,25 @@ export const DataRoomDetailPage = () => {
     }
   };
 
+  // The browser's PUT to Blob storage finishing doesn't mean our DB row is
+  // READY yet — Vercel's onUploadCompleted callback lands as a separate,
+  // slightly-delayed request. Poll briefly instead of refetching once too
+  // early and showing a stale list.
+  const waitForFileToAppear = async (fileName: string) => {
+    if (!accessToken || !id) return;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        const latest = await getContents(accessToken, id, currentFolderId);
+        setContents(latest);
+        if (latest.files.some((file) => file.name === fileName)) return;
+      } catch {
+        // A transient error here just means this attempt didn't refresh the
+        // list; the next attempt (or the user's own reload) will catch up.
+      }
+    }
+  };
+
   const uploadOne = async (item: UploadItem) => {
     if (!accessToken || !id) return;
     try {
@@ -202,7 +221,7 @@ export const DataRoomDetailPage = () => {
       setUploads((prev) =>
         prev.map((u) => (u.id === item.id ? { ...u, status: 'done', progress: 100 } : u)),
       );
-      load();
+      await waitForFileToAppear(item.file.name);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Upload failed';
       setUploads((prev) =>
