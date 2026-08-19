@@ -1,7 +1,21 @@
-import { Body, Controller, Param, Post, Query, Req, UsePipes, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import type { HandleUploadBody } from '@vercel/blob/client';
 import { FilesService } from './files.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { RequestUser } from '../common/decorators/current-user.decorator';
 
 @Controller('data-rooms/:dataRoomId/files')
 export class FilesController {
@@ -21,5 +35,15 @@ export class FilesController {
     @Query('folderId') folderId?: string,
   ) {
     return this.filesService.handleUploadRequest(request, body, dataRoomId, folderId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':fileId')
+  remove(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Param('fileId') fileId: string,
+  ) {
+    return this.filesService.remove(user.userId, dataRoomId, fileId);
   }
 }

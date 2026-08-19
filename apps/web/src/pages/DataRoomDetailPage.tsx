@@ -20,8 +20,8 @@ import {
   getFolderSummary,
   renameFolder,
 } from '../lib/folders';
-import type { BreadcrumbEntry, Folder, FolderContents, SubtreeSummary } from '../lib/folders';
-import { uploadFile } from '../lib/files';
+import type { BreadcrumbEntry, FileEntry, Folder, FolderContents, SubtreeSummary } from '../lib/folders';
+import { deleteFile, uploadFile } from '../lib/files';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { UploadPanel } from '../components/UploadPanel';
@@ -76,6 +76,10 @@ export const DataRoomDetailPage = () => {
   const [deleteSummary, setDeleteSummary] = useState<SubtreeSummary | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [fileDeleteTarget, setFileDeleteTarget] = useState<FileEntry | null>(null);
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
+  const [fileDeleteError, setFileDeleteError] = useState<string | null>(null);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
@@ -182,6 +186,25 @@ export const DataRoomDetailPage = () => {
       setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete folder');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmDeleteFile = async () => {
+    if (!accessToken || !id || !fileDeleteTarget) return;
+    setIsDeletingFile(true);
+    setFileDeleteError(null);
+    try {
+      await deleteFile(accessToken, id, fileDeleteTarget.id);
+      setContents((prev) =>
+        prev
+          ? { ...prev, files: prev.files.filter((f) => f.id !== fileDeleteTarget.id) }
+          : prev,
+      );
+      setFileDeleteTarget(null);
+    } catch (err) {
+      setFileDeleteError(err instanceof ApiError ? err.message : 'Failed to delete file');
+    } finally {
+      setIsDeletingFile(false);
     }
   };
 
@@ -430,7 +453,7 @@ export const DataRoomDetailPage = () => {
             {contents?.files.map((file) => (
               <div
                 key={file.id}
-                className="flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
+                className="group flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
               >
                 <FileText className="size-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate text-row-primary text-foreground">
@@ -439,6 +462,19 @@ export const DataRoomDetailPage = () => {
                 <span className="shrink-0 text-row-secondary tabular-nums text-muted-foreground">
                   {formatBytes(file.sizeBytes)}
                 </span>
+                <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFileDeleteTarget(file);
+                      setFileDeleteError(null);
+                    }}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Delete"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -508,6 +544,33 @@ export const DataRoomDetailPage = () => {
               className={buttonVariants({ variant: 'destructive' })}
             >
               {isDeleting ? 'Deleting…' : 'Delete permanently'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* File delete confirmation */}
+      <AlertDialog
+        open={!!fileDeleteTarget}
+        onOpenChange={(open) => !open && setFileDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete &ldquo;{fileDeleteTarget?.name}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          {fileDeleteError ? <p className="text-sm text-destructive">{fileDeleteError}</p> : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeletingFile}
+              onClick={(event) => {
+                event.preventDefault();
+                handleConfirmDeleteFile();
+              }}
+              className={buttonVariants({ variant: 'destructive' })}
+            >
+              {isDeletingFile ? 'Deleting…' : 'Delete permanently'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

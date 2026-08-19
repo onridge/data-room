@@ -1,4 +1,5 @@
 import { upload } from '@vercel/blob/client';
+import { api, authHeader } from './api';
 
 export interface UploadFileParams {
   file: File;
@@ -16,5 +17,11 @@ export const uploadFile = ({ file, dataRoomId, folderId, token, onProgress }: Up
     handleUploadUrl: `${import.meta.env.VITE_API_URL}/data-rooms/${dataRoomId}/files/upload${query}`,
     headers: { Authorization: `Bearer ${token}` },
     onUploadProgress: ({ percentage }) => onProgress(percentage),
+  });
+};
+
+export const deleteFile = async (token: string, dataRoomId: string, fileId: string) => {
+  await api.delete(`/data-rooms/${dataRoomId}/files/${fileId}`, {
+    headers: authHeader(token),
   });
 };

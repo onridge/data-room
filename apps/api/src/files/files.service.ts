@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { head } from '@vercel/blob';
+import { del, head } from '@vercel/blob';
 import { handleUpload } from '@vercel/blob/client';
 import type { HandleUploadBody } from '@vercel/blob/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -68,6 +68,30 @@ export class FilesService {
       candidate = `${base} (${attempt})${ext}`;
       attempt += 1;
     }
+  }
+
+  private async getOwnedFile(ownerId: string, dataRoomId: string, fileId: string) {
+    const dataRoom = await this.prisma.dataRoom.findFirst({
+      where: { id: dataRoomId, ownerId },
+    });
+    if (!dataRoom) {
+      throw new NotFoundException('Data room not found');
+    }
+    const file = await this.prisma.file.findFirst({ where: { id: fileId, dataRoomId } });
+    if (!file) {
+      throw new NotFoundException('File not found');
+    }
+    return file;
+  }
+
+  async remove(ownerId: string, dataRoomId: string, fileId: string) {
+    const file = await this.getOwnedFile(ownerId, dataRoomId, fileId);
+    // A file stuck in PENDING never got a real blob (storageKey is still the
+    // placeholder), so there's nothing to delete from the store.
+    if (file.status === 'READY') {
+      await del(file.storageKey);
+    }
+    await this.prisma.file.delete({ where: { id: fileId } });
   }
 
   async handleUploadRequest(
