@@ -24,7 +24,7 @@ export class DataRoomsController {
 
   @Get(':id')
   findOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
-    return this.dataRoomsService.findOneOwned(user.userId, id);
+    return this.dataRoomsService.findOneAccessible(user.userId, id);
   }
 
   @Get(':id/contents')

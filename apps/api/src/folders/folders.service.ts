@@ -1,8 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ShareResourceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateFolderDto } from './dto/create-folder.dto';
 import { UpdateFolderDto } from './dto/update-folder.dto';
+import { ShareAccessService } from '../shares/share-access.service';
 
 interface SubtreeSummaryRow {
   subfolderCount: number;
@@ -12,7 +13,10 @@ interface SubtreeSummaryRow {
 
 @Injectable()
 export class FoldersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly shareAccess: ShareAccessService,
+  ) {}
 
   private async assertDataRoomOwnership(ownerId: string, dataRoomId: string) {
     const dataRoom = await this.prisma.dataRoom.findFirst({
@@ -67,8 +71,22 @@ export class FoldersService {
     }
   }
 
-  async findOne(ownerId: string, dataRoomId: string, folderId: string) {
-    return this.getOwnedFolder(ownerId, dataRoomId, folderId);
+  // Owner or shared-with-read-access — write ops below stay on the strict
+  // getOwnedFolder; sharing is read-only per the spec.
+  private async getAccessibleFolder(userId: string, dataRoomId: string, folderId: string) {
+    const folder = await this.prisma.folder.findFirst({ where: { id: folderId, dataRoomId } });
+    if (!folder) {
+      throw new NotFoundException('Folder not found');
+    }
+    const allowed = await this.shareAccess.canRead(userId, ShareResourceType.FOLDER, folderId);
+    if (!allowed) {
+      throw new NotFoundException('Folder not found');
+    }
+    return folder;
+  }
+
+  async findOne(userId: string, dataRoomId: string, folderId: string) {
+    return this.getAccessibleFolder(userId, dataRoomId, folderId);
   }
 
   async rename(ownerId: string, dataRoomId: string, folderId: string, dto: UpdateFolderDto) {
@@ -94,8 +112,8 @@ export class FoldersService {
   // Ancestor chain root -> folder, for breadcrumb rendering. Walking the
   // adjacency list one hop at a time is fine here: breadcrumb depth is
   // small and bounded, unlike the subtree below.
-  async getPath(ownerId: string, dataRoomId: string, folderId: string) {
-    await this.assertDataRoomOwnership(ownerId, dataRoomId);
+  async getPath(userId: string, dataRoomId: string, folderId: string) {
+    await this.getAccessibleFolder(userId, dataRoomId, folderId);
 
     const path: { id: string; name: string }[] = [];
     let currentId: string | null = folderId;
