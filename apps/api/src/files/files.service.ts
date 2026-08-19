@@ -9,7 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma } from '@prisma/client';
+import { Prisma, ShareResourceType } from '@prisma/client';
 import { del, get, head } from '@vercel/blob';
 import { handleUpload } from '@vercel/blob/client';
 import type { HandleUploadBody } from '@vercel/blob/client';
@@ -18,6 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { getJwtSecret } from '../auth/jwt-secret.util';
 import { UpdateFileDto } from './dto/update-file.dto';
 import { MoveFileDto } from './dto/move-file.dto';
+import { ShareAccessService } from '../shares/share-access.service';
 
 interface UploadTokenPayload {
   fileId: string;
@@ -28,6 +29,7 @@ export class FilesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly shareAccess: ShareAccessService,
   ) {}
 
   // handleUpload runs two very different calls through this same function:
@@ -91,6 +93,21 @@ export class FilesService {
     return file;
   }
 
+  // Owner or shared-with-read-access — used by streamContent (viewing).
+  // Write ops above stay on the strict getOwnedFile; sharing is read-only
+  // per the spec.
+  private async getAccessibleFile(userId: string, dataRoomId: string, fileId: string) {
+    const file = await this.prisma.file.findFirst({ where: { id: fileId, dataRoomId } });
+    if (!file) {
+      throw new NotFoundException('File not found');
+    }
+    const allowed = await this.shareAccess.canRead(userId, ShareResourceType.FILE, fileId);
+    if (!allowed) {
+      throw new NotFoundException('File not found');
+    }
+    return file;
+  }
+
   async rename(ownerId: string, dataRoomId: string, fileId: string, dto: UpdateFileDto) {
     await this.getOwnedFile(ownerId, dataRoomId, fileId);
     try {
@@ -132,8 +149,8 @@ export class FilesService {
   // Blob access is 'private', so the stored URL isn't fetchable directly —
   // this proxies the content through our own auth instead of handing out a
   // signed URL, keeping the same JwtAuthGuard check as everything else.
-  async streamContent(ownerId: string, dataRoomId: string, fileId: string, res: Response) {
-    const file = await this.getOwnedFile(ownerId, dataRoomId, fileId);
+  async streamContent(userId: string, dataRoomId: string, fileId: string, res: Response) {
+    const file = await this.getAccessibleFile(userId, dataRoomId, fileId);
     if (file.status !== 'READY') {
       throw new NotFoundException('File not found');
     }
