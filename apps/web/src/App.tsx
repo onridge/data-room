@@ -4,6 +4,7 @@ import { AuthProvider } from './lib/auth-context';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { DataRoomsPage } from './pages/DataRoomsPage';
+import { DataRoomDetailPage } from './pages/DataRoomDetailPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 const App = () => {
@@ -19,6 +20,14 @@ const App = () => {
               element={
                 <ProtectedRoute>
                   <DataRoomsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/data-rooms/:id"
+              element={
+                <ProtectedRoute>
+                  <DataRoomDetailPage />
                 </ProtectedRoute>
               }
             />
