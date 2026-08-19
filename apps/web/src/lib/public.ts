@@ -1,6 +1,5 @@
 import { api } from './api';
 import type { ShareResourceType } from './shares';
-import type { FolderContents } from './folders';
 
 export interface PublicShareInfo {
   resourceType: ShareResourceType;
@@ -10,13 +9,20 @@ export interface PublicShareInfo {
   sharedAt: string;
 }
 
+// Narrower than the authenticated FolderContents on purpose — the public
+// endpoint only returns what this view renders, and no internal ids.
+export interface PublicContents {
+  folders: { id: string; name: string }[];
+  files: { id: string; name: string; sizeBytes: string }[];
+}
+
 export const getPublicShareInfo = async (token: string) => {
   const { data } = await api.get<PublicShareInfo>(`/public/${token}`);
   return data;
 };
 
 export const getPublicContents = async (token: string, folderId?: string) => {
-  const { data } = await api.get<FolderContents>(`/public/${token}/contents`, {
+  const { data } = await api.get<PublicContents>(`/public/${token}/contents`, {
     params: folderId ? { folderId } : undefined,
   });
   return data;

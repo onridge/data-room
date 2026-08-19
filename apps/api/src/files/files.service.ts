@@ -24,6 +24,12 @@ interface UploadTokenPayload {
   fileId: string;
 }
 
+// Enforced in the upload token itself, so the blob store rejects an
+// oversized file even if the request never went through our UI. The
+// frontend checks the same limit first, but only to fail fast with a
+// nicer message — this is the one that actually binds.
+const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+
 @Injectable()
 export class FilesService {
   constructor(
@@ -224,6 +230,7 @@ export class FilesService {
         const payload: UploadTokenPayload = { fileId: file.id };
         return {
           allowedContentTypes: ['application/pdf'],
+          maximumSizeInBytes: MAX_UPLOAD_SIZE_BYTES,
           addRandomSuffix: true,
           tokenPayload: JSON.stringify(payload),
         };
