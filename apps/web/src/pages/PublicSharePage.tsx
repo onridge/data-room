@@ -110,7 +110,7 @@ export const PublicSharePage = () => {
         <button
           type="button"
           onClick={() => navigateToBreadcrumb(-1)}
-          className="hover:text-foreground"
+          className="cursor-pointer hover:text-foreground"
         >
           {shareInfo.name}
         </button>
@@ -120,7 +120,7 @@ export const PublicSharePage = () => {
             <button
               type="button"
               onClick={() => navigateToBreadcrumb(index)}
-              className="hover:text-foreground"
+              className="cursor-pointer hover:text-foreground"
             >
               {entry.name}
             </button>
@@ -147,7 +147,7 @@ export const PublicSharePage = () => {
               key={folder.id}
               type="button"
               onClick={() => navigateToFolder(folder.id, folder.name)}
-              className="flex h-(--dr-table-row-h) w-full items-center gap-2.5 border-b border-border px-3 text-left last:border-b-0 hover:bg-muted/60"
+              className="flex h-(--dr-table-row-h) w-full cursor-pointer items-center gap-2.5 border-b border-border px-3 text-left last:border-b-0 hover:bg-muted/60"
             >
               <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
               <span className="truncate text-row-primary text-foreground">{folder.name}</span>
@@ -168,7 +168,7 @@ export const PublicSharePage = () => {
               <button
                 type="button"
                 onClick={() => handleViewFile(file.id, file.name)}
-                className="grid size-7 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                 aria-label="View"
               >
                 <Eye className="size-3.5" />

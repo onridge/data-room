@@ -426,7 +426,7 @@ export const DataRoomDetailPage = () => {
         <button
           type="button"
           onClick={() => navigateToFolder(undefined)}
-          className="hover:text-foreground"
+          className="cursor-pointer hover:text-foreground"
         >
           {dataRoom?.name ?? '…'}
         </button>
@@ -436,7 +436,7 @@ export const DataRoomDetailPage = () => {
             <button
               type="button"
               onClick={() => navigateToFolder(entry.id)}
-              className="hover:text-foreground"
+              className="cursor-pointer hover:text-foreground"
             >
               {entry.name}
             </button>
@@ -518,7 +518,7 @@ export const DataRoomDetailPage = () => {
           <button
             type="button"
             onClick={() => setUploadValidationError(null)}
-            className="shrink-0 text-destructive/70 hover:text-destructive"
+            className="shrink-0 cursor-pointer text-destructive/70 hover:text-destructive"
           >
             <X className="size-4" />
           </button>
@@ -555,7 +555,7 @@ export const DataRoomDetailPage = () => {
                 <button
                   type="button"
                   onClick={() => navigateToFolder(folder.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
                 >
                   <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
                   <span className="truncate text-row-primary text-foreground">{folder.name}</span>
@@ -566,7 +566,7 @@ export const DataRoomDetailPage = () => {
                     onClick={() =>
                       setShareTarget({ resourceType: 'FOLDER', resourceId: folder.id, name: folder.name })
                     }
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Share"
                   >
                     <Share2 className="size-3.5" />
@@ -574,7 +574,7 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => openRename(folder)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Rename"
                   >
                     <Pencil className="size-3.5" />
@@ -582,7 +582,7 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => openDeleteDialog(folder)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Delete"
                   >
                     <Trash2 className="size-3.5" />
@@ -608,7 +608,7 @@ export const DataRoomDetailPage = () => {
                     onClick={() =>
                       setShareTarget({ resourceType: 'FILE', resourceId: file.id, name: file.name })
                     }
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Share"
                   >
                     <Share2 className="size-3.5" />
@@ -616,7 +616,7 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => handleViewFile(file)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="View"
                   >
                     <Eye className="size-3.5" />
@@ -624,7 +624,7 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => openMoveDialog(file)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Move"
                   >
                     <FolderInput className="size-3.5" />
@@ -632,7 +632,7 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() => openFileRename(file)}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Rename"
                   >
                     <Pencil className="size-3.5" />
@@ -643,7 +643,7 @@ export const DataRoomDetailPage = () => {
                       setFileDeleteTarget(file);
                       setFileDeleteError(null);
                     }}
-                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Delete"
                   >
                     <Trash2 className="size-3.5" />
@@ -737,7 +737,7 @@ export const DataRoomDetailPage = () => {
               type="button"
               disabled={isMoving || moveTarget?.folderId === null}
               onClick={() => handleMoveFile(undefined)}
-              className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+              className="flex w-full cursor-pointer items-center gap-2 border-b border-border px-3 py-2 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:cursor-default disabled:opacity-50"
             >
               <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
               Root
@@ -749,7 +749,7 @@ export const DataRoomDetailPage = () => {
                 disabled={isMoving || moveTarget?.folderId === option.id}
                 onClick={() => handleMoveFile(option.id)}
                 style={{ paddingLeft: `${12 + option.depth * 16}px` }}
-                className="flex w-full items-center gap-2 border-b border-border py-2 pr-3 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                className="flex w-full cursor-pointer items-center gap-2 border-b border-border py-2 pr-3 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:cursor-default disabled:opacity-50"
               >
                 <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
                 {option.name}

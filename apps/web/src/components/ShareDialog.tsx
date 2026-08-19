@@ -192,7 +192,7 @@ export const ShareDialog = ({
                         type="button"
                         onClick={() => handleRemoveGrant(grant.id)}
                         disabled={isBusy}
-                        className="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:cursor-default"
                         aria-label="Remove access"
                       >
                         <X className="size-3.5" />

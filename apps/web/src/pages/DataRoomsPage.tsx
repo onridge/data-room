@@ -118,7 +118,7 @@ export const DataRoomsPage = () => {
               key={dataRoom.id}
               type="button"
               onClick={() => navigate(`/data-rooms/${dataRoom.id}`)}
-              className="rounded-lg border border-border bg-card p-4 text-left hover:border-input"
+              className="cursor-pointer rounded-lg border border-border bg-card p-4 text-left hover:border-input"
             >
               <p className="text-row-primary font-medium text-foreground">{dataRoom.name}</p>
               <p className="mt-1 text-xs text-muted-foreground">
