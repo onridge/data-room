@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL;
+import axios from 'axios';
+import type { AxiosError } from 'axios';
 
 export class ApiError extends Error {
   status: number;
@@ -9,29 +10,22 @@ export class ApiError extends Error {
   }
 }
 
-interface ApiFetchOptions extends RequestInit {
-  token?: string | null;
+export const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL,
+});
+
+interface ErrorBody {
+  message?: string | string[];
 }
 
-export const apiFetch = async <T,>(path: string, options: ApiFetchOptions = {}): Promise<T> => {
-  const { token, headers, ...rest } = options;
+api.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError<ErrorBody>) => {
+    const status = error.response?.status ?? 0;
+    const rawMessage = error.response?.data?.message ?? error.message;
+    const message = Array.isArray(rawMessage) ? rawMessage.join(', ') : rawMessage;
+    return Promise.reject(new ApiError(status, message));
+  },
+);
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...rest,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-  });
-
-  const contentType = response.headers.get('content-type');
-  const body = contentType?.includes('application/json') ? await response.json() : undefined;
-
-  if (!response.ok) {
-    const message = body?.message ?? response.statusText;
-    throw new ApiError(response.status, Array.isArray(message) ? message.join(', ') : message);
-  }
-
-  return body as T;
-};
+export const authHeader = (token: string) => ({ Authorization: `Bearer ${token}` });

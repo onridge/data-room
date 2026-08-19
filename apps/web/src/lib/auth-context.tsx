@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { apiFetch } from './api';
+import { api, authHeader } from './api';
 
 export interface AuthUser {
   id: string;
@@ -66,41 +66,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // Stored token may have expired or been revoked — confirm against the
     // API instead of trusting localStorage blindly.
-    apiFetch<AuthUser>('/auth/me', { token: stored.accessToken })
-      .then((freshUser) => setUser(freshUser))
+    api
+      .get<AuthUser>('/auth/me', { headers: authHeader(stored.accessToken) })
+      .then(({ data }) => setUser(data))
       .catch(() => logout())
       .finally(() => setIsLoading(false));
   }, [logout]);
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const auth = await apiFetch<AuthResponse>('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      });
-      applyAuth(auth);
+      const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
+      applyAuth(data);
     },
     [applyAuth],
   );
 
   const register = useCallback(
     async (email: string, password: string, name: string) => {
-      const auth = await apiFetch<AuthResponse>('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({ email, password, name }),
+      const { data } = await api.post<AuthResponse>('/auth/register', {
+        email,
+        password,
+        name,
       });
-      applyAuth(auth);
+      applyAuth(data);
     },
     [applyAuth],
   );
 
   const loginWithGoogle = useCallback(
     async (idToken: string) => {
-      const auth = await apiFetch<AuthResponse>('/auth/google', {
-        method: 'POST',
-        body: JSON.stringify({ idToken }),
-      });
-      applyAuth(auth);
+      const { data } = await api.post<AuthResponse>('/auth/google', { idToken });
+      applyAuth(data);
     },
     [applyAuth],
   );
