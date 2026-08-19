@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { Eye, FileText, Folder as FolderIcon } from 'lucide-react';
+import { Eye, FileText, Folder as FolderIcon, Lock, User } from 'lucide-react';
 import { getPublicContents, getPublicShareInfo, viewPublicFile } from '../lib/public';
 import type { PublicShareInfo } from '../lib/public';
 import type { FolderContents } from '../lib/folders';
@@ -12,6 +13,13 @@ interface BreadcrumbEntry {
   id: string;
   name: string;
 }
+
+const Badge = ({ icon, children }: { icon: ReactNode; children: ReactNode }) => (
+  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-modal-caption text-muted-foreground">
+    {icon}
+    {children}
+  </span>
+);
 
 // A public link is rooted at whatever the owner shared, not the data
 // room's actual root — so the breadcrumb trail is built client-side as
@@ -82,7 +90,11 @@ export const PublicSharePage = () => {
   if (shareInfo.resourceType === 'FILE') {
     return (
       <div className="p-8">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
+          <Badge icon={<User className="size-3" />}>Shared by {shareInfo.ownerName}</Badge>
+          <Badge icon={<Lock className="size-3" />}>Read-only</Badge>
+        </div>
+        <div className="mt-3 flex items-center gap-2.5">
           <FileText className="size-5 shrink-0 text-red-500 dark:text-red-400" />
           <h1 className="text-page-title font-semibold text-foreground">{shareInfo.name}</h1>
         </div>
@@ -104,9 +116,16 @@ export const PublicSharePage = () => {
     );
   }
 
+  const totalSizeBytes = contents?.files.reduce((sum, file) => sum + Number(file.sizeBytes), 0) ?? 0;
+
   return (
     <div className="p-8">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2">
+        <Badge icon={<User className="size-3" />}>Shared by {shareInfo.ownerName}</Badge>
+        <Badge icon={<Lock className="size-3" />}>Read-only</Badge>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
         <button
           type="button"
           onClick={() => navigateToBreadcrumb(-1)}
@@ -131,6 +150,13 @@ export const PublicSharePage = () => {
       <h1 className="mt-2 text-page-title font-semibold text-foreground">
         {breadcrumb.at(-1)?.name ?? shareInfo.name}
       </h1>
+      {contents ? (
+        <p className="mt-1 text-modal-caption text-muted-foreground">
+          {contents.folders.length} folder{contents.folders.length === 1 ? '' : 's'} ·{' '}
+          {contents.files.length} file{contents.files.length === 1 ? '' : 's'} ·{' '}
+          {formatBytes(totalSizeBytes)}
+        </p>
+      ) : null}
 
       {isLoading ? (
         <p className="mt-8 text-sm text-muted-foreground">Loading…</p>
