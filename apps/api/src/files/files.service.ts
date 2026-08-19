@@ -14,6 +14,7 @@ import type { HandleUploadBody } from '@vercel/blob/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { getJwtSecret } from '../auth/jwt-secret.util';
 import { UpdateFileDto } from './dto/update-file.dto';
+import { MoveFileDto } from './dto/move-file.dto';
 
 interface UploadTokenPayload {
   fileId: string;
@@ -97,6 +98,29 @@ export class FilesService {
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('A file with this name already exists here');
+      }
+      throw error;
+    }
+  }
+
+  async move(ownerId: string, dataRoomId: string, fileId: string, dto: MoveFileDto) {
+    await this.getOwnedFile(ownerId, dataRoomId, fileId);
+    if (dto.folderId) {
+      const folder = await this.prisma.folder.findFirst({
+        where: { id: dto.folderId, dataRoomId },
+      });
+      if (!folder) {
+        throw new NotFoundException('Folder not found');
+      }
+    }
+    try {
+      return await this.prisma.file.update({
+        where: { id: fileId },
+        data: { folderId: dto.folderId ?? null },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('A file with this name already exists in that folder');
       }
       throw error;
     }

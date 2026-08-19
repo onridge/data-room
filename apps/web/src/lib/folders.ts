@@ -46,6 +46,13 @@ export const getContents = async (token: string, dataRoomId: string, folderId?: 
   return data;
 };
 
+export const listAllFolders = async (token: string, dataRoomId: string) => {
+  const { data } = await api.get<Folder[]>(`/data-rooms/${dataRoomId}/folders`, {
+    headers: authHeader(token),
+  });
+  return data;
+};
+
 export const getFolderPath = async (token: string, dataRoomId: string, folderId: string) => {
   const { data } = await api.get<BreadcrumbEntry[]>(
     `/data-rooms/${dataRoomId}/folders/${folderId}/path`,

@@ -15,6 +15,7 @@ import type { Request } from 'express';
 import type { HandleUploadBody } from '@vercel/blob/client';
 import { FilesService } from './files.service';
 import { UpdateFileDto } from './dto/update-file.dto';
+import { MoveFileDto } from './dto/move-file.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { RequestUser } from '../common/decorators/current-user.decorator';
@@ -48,6 +49,17 @@ export class FilesController {
     @Body() dto: UpdateFileDto,
   ) {
     return this.filesService.rename(user.userId, dataRoomId, fileId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':fileId/move')
+  move(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Param('fileId') fileId: string,
+    @Body() dto: MoveFileDto,
+  ) {
+    return this.filesService.move(user.userId, dataRoomId, fileId, dto);
   }
 
   @UseGuards(JwtAuthGuard)

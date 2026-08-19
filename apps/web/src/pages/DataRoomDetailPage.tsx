@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   FileText,
   Folder as FolderIcon,
+  FolderInput,
   Pencil,
   Trash2,
   Upload as UploadIcon,
@@ -18,10 +19,11 @@ import {
   getContents,
   getFolderPath,
   getFolderSummary,
+  listAllFolders,
   renameFolder,
 } from '../lib/folders';
 import type { BreadcrumbEntry, FileEntry, Folder, FolderContents, SubtreeSummary } from '../lib/folders';
-import { deleteFile, renameFile, uploadFile } from '../lib/files';
+import { deleteFile, moveFile, renameFile, uploadFile } from '../lib/files';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { UploadPanel } from '../components/UploadPanel';
@@ -85,6 +87,11 @@ export const DataRoomDetailPage = () => {
   const [fileRenameValue, setFileRenameValue] = useState('');
   const [isRenamingFile, setIsRenamingFile] = useState(false);
   const [fileRenameError, setFileRenameError] = useState<string | null>(null);
+
+  const [moveTarget, setMoveTarget] = useState<FileEntry | null>(null);
+  const [moveFolders, setMoveFolders] = useState<Folder[]>([]);
+  const [isMoving, setIsMoving] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
@@ -186,6 +193,56 @@ export const DataRoomDetailPage = () => {
     } finally {
       setIsRenamingFile(false);
     }
+  };
+
+  const openMoveDialog = async (file: FileEntry) => {
+    setMoveTarget(file);
+    setMoveError(null);
+    setMoveFolders([]);
+    if (!accessToken || !id) return;
+    try {
+      setMoveFolders(await listAllFolders(accessToken, id));
+    } catch {
+      // Picker just falls back to "Root only" if this fails.
+    }
+  };
+
+  const handleMoveFile = async (folderId: string | undefined) => {
+    if (!accessToken || !id || !moveTarget) return;
+    setIsMoving(true);
+    setMoveError(null);
+    try {
+      await moveFile(accessToken, id, moveTarget.id, folderId);
+      // The file leaves whatever folder is currently open, regardless of
+      // which folder it moved to.
+      setContents((prev) =>
+        prev ? { ...prev, files: prev.files.filter((f) => f.id !== moveTarget.id) } : prev,
+      );
+      setMoveTarget(null);
+    } catch (err) {
+      setMoveError(err instanceof ApiError ? err.message : 'Failed to move file');
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
+  // Adjacency list -> indented list, root folders first then their children
+  // depth-first — same shape the breadcrumb/tree already assumes elsewhere.
+  const buildFolderOptions = (folders: Folder[]) => {
+    const byParent = new Map<string | null, Folder[]>();
+    for (const folder of folders) {
+      const key = folder.parentId;
+      byParent.set(key, [...(byParent.get(key) ?? []), folder]);
+    }
+    const options: { id: string; name: string; depth: number }[] = [];
+    const walk = (parentId: string | null, depth: number) => {
+      for (const folder of byParent.get(parentId) ?? []) {
+        options.push({ id: folder.id, name: folder.name, depth });
+        walk(folder.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return options;
   };
 
   const openDeleteDialog = async (folder: Folder) => {
@@ -496,6 +553,14 @@ export const DataRoomDetailPage = () => {
                 <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
                   <button
                     type="button"
+                    onClick={() => openMoveDialog(file)}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Move"
+                  >
+                    <FolderInput className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => openFileRename(file)}
                     className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Rename"
@@ -587,6 +652,41 @@ export const DataRoomDetailPage = () => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move dialog */}
+      <Dialog open={!!moveTarget} onOpenChange={(open) => !open && setMoveTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move &ldquo;{moveTarget?.name}&rdquo;</DialogTitle>
+            <DialogDescription>Choose a destination folder.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-64 overflow-y-auto rounded-md border border-border">
+            <button
+              type="button"
+              disabled={isMoving || moveTarget?.folderId === null}
+              onClick={() => handleMoveFile(undefined)}
+              className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+            >
+              <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+              Root
+            </button>
+            {buildFolderOptions(moveFolders).map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                disabled={isMoving || moveTarget?.folderId === option.id}
+                onClick={() => handleMoveFile(option.id)}
+                style={{ paddingLeft: `${12 + option.depth * 16}px` }}
+                className="flex w-full items-center gap-2 border-b border-border py-2 pr-3 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+              >
+                <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                {option.name}
+              </button>
+            ))}
+          </div>
+          {moveError ? <p className="text-sm text-destructive">{moveError}</p> : null}
         </DialogContent>
       </Dialog>
 

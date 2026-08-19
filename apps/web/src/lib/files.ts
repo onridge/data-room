@@ -40,3 +40,17 @@ export const renameFile = async (
   );
   return data;
 };
+
+export const moveFile = async (
+  token: string,
+  dataRoomId: string,
+  fileId: string,
+  folderId: string | undefined,
+) => {
+  const { data } = await api.patch<FileEntry>(
+    `/data-rooms/${dataRoomId}/files/${fileId}/move`,
+    { folderId },
+    { headers: authHeader(token) },
+  );
+  return data;
+};

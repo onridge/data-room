@@ -20,6 +20,11 @@ export class FoldersController {
     return this.foldersService.create(user.userId, dataRoomId, dto);
   }
 
+  @Get()
+  findAll(@CurrentUser() user: RequestUser, @Param('dataRoomId') dataRoomId: string) {
+    return this.foldersService.findAll(user.userId, dataRoomId);
+  }
+
   @Get(':folderId')
   findOne(
     @CurrentUser() user: RequestUser,
