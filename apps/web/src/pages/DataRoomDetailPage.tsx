@@ -557,8 +557,17 @@ export const DataRoomDetailPage = () => {
           <div className="mt-8 rounded-lg border border-dashed border-input p-8 text-center">
             <p className="text-sm font-medium text-foreground">Folder is empty</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Drag and drop PDFs here, or use the Upload button.
+              Drag and drop PDFs here, or use the buttons below.
             </p>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+                <UploadIcon className="size-3.5" />
+                Upload
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setIsCreateOpen(true)}>
+                New Folder
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="mt-6 overflow-hidden rounded-lg border border-border">
