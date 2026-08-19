@@ -1,10 +1,16 @@
+// Pinned to Prisma 6 (not 7): the v7 "prisma-client" generator emits
+// import.meta.url in its output, which breaks under Nest's CommonJS build
+// (Node loads the file as ESM, then chokes on the CJS `exports` in the same
+// file). Classic prisma-client-js has no such issue. See migration
+// 20260819000000_add_google_auth for the schema change that shipped
+// alongside this downgrade.
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum ShareResourceType {
@@ -31,7 +37,10 @@ enum FileStatus {
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
-  passwordHash String
+  // Null for accounts created via Google — they never set a password.
+  passwordHash String?
+  // Set only for accounts created (or later linked) via Google Sign-In.
+  googleId     String?  @unique
   name         String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
