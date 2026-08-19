@@ -2,16 +2,18 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   Patch,
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import type { HandleUploadBody } from '@vercel/blob/client';
 import { FilesService } from './files.service';
 import { UpdateFileDto } from './dto/update-file.dto';
@@ -38,6 +40,17 @@ export class FilesController {
     @Query('folderId') folderId?: string,
   ) {
     return this.filesService.handleUploadRequest(request, body, dataRoomId, folderId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':fileId/content')
+  content(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Param('fileId') fileId: string,
+    @Res() res: Response,
+  ) {
+    return this.filesService.streamContent(user.userId, dataRoomId, fileId, res);
   }
 
   @UseGuards(JwtAuthGuard)

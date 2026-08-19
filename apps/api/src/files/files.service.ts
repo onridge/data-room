@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import type { IncomingMessage } from 'node:http';
 import {
   ConflictException,
@@ -8,9 +10,10 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
-import { del, head } from '@vercel/blob';
+import { del, get, head } from '@vercel/blob';
 import { handleUpload } from '@vercel/blob/client';
 import type { HandleUploadBody } from '@vercel/blob/client';
+import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { getJwtSecret } from '../auth/jwt-secret.util';
 import { UpdateFileDto } from './dto/update-file.dto';
@@ -124,6 +127,23 @@ export class FilesService {
       }
       throw error;
     }
+  }
+
+  // Blob access is 'private', so the stored URL isn't fetchable directly —
+  // this proxies the content through our own auth instead of handing out a
+  // signed URL, keeping the same JwtAuthGuard check as everything else.
+  async streamContent(ownerId: string, dataRoomId: string, fileId: string, res: Response) {
+    const file = await this.getOwnedFile(ownerId, dataRoomId, fileId);
+    if (file.status !== 'READY') {
+      throw new NotFoundException('File not found');
+    }
+    const result = await get(file.storageKey, { access: 'private' });
+    if (!result || result.statusCode !== 200) {
+      throw new NotFoundException('File not found');
+    }
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.name)}"`);
+    Readable.fromWeb(result.stream as unknown as NodeReadableStream).pipe(res);
   }
 
   async remove(ownerId: string, dataRoomId: string, fileId: string) {

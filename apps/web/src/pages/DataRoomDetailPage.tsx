@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
+  Eye,
   FileText,
   Folder as FolderIcon,
   FolderInput,
@@ -23,7 +24,7 @@ import {
   renameFolder,
 } from '../lib/folders';
 import type { BreadcrumbEntry, FileEntry, Folder, FolderContents, SubtreeSummary } from '../lib/folders';
-import { deleteFile, moveFile, renameFile, uploadFile } from '../lib/files';
+import { deleteFile, moveFile, renameFile, uploadFile, viewFile } from '../lib/files';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { UploadPanel } from '../components/UploadPanel';
@@ -192,6 +193,19 @@ export const DataRoomDetailPage = () => {
       setFileRenameError(err instanceof ApiError ? err.message : 'Failed to rename file');
     } finally {
       setIsRenamingFile(false);
+    }
+  };
+
+  const handleViewFile = async (file: FileEntry) => {
+    if (!accessToken || !id) return;
+    // Opened synchronously so the browser still ties it to the click and
+    // doesn't treat it as an unsolicited popup once the fetch resolves.
+    const newTab = window.open('', '_blank');
+    try {
+      const objectUrl = await viewFile(accessToken, id, file.id);
+      if (newTab) newTab.location.href = objectUrl;
+    } catch {
+      newTab?.close();
     }
   };
 
@@ -551,6 +565,14 @@ export const DataRoomDetailPage = () => {
                   {formatBytes(file.sizeBytes)}
                 </span>
                 <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => handleViewFile(file)}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="View"
+                  >
+                    <Eye className="size-3.5" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => openMoveDialog(file)}

@@ -54,3 +54,14 @@ export const moveFile = async (
   );
   return data;
 };
+
+// Blob access is private, so the file has to be fetched through our own
+// auth rather than opened by URL directly — the object URL below is what
+// actually gets opened/embedded.
+export const viewFile = async (token: string, dataRoomId: string, fileId: string) => {
+  const { data } = await api.get(`/data-rooms/${dataRoomId}/files/${fileId}/content`, {
+    headers: authHeader(token),
+    responseType: 'blob',
+  });
+  return URL.createObjectURL(data as Blob);
+};
