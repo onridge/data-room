@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, DragEvent, FormEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Eye,
@@ -15,48 +14,22 @@ import {
 import { useAuth } from '../lib/auth-context';
 import { getDataRoom } from '../lib/data-rooms';
 import type { DataRoom } from '../lib/data-rooms';
-import {
-  createFolder,
-  deleteFolder,
-  getContents,
-  getFolderPath,
-  getFolderSummary,
-  listAllFolders,
-  renameFolder,
-} from '../lib/folders';
-import type { BreadcrumbEntry, FileEntry, Folder, FolderContents, SubtreeSummary } from '../lib/folders';
-import { deleteFile, moveFile, renameFile, uploadFile, viewFile } from '../lib/files';
+import { getContents, getFolderPath, renameFolder } from '../lib/folders';
+import type { BreadcrumbEntry, FileEntry, Folder, FolderContents } from '../lib/folders';
+import { renameFile, viewFile } from '../lib/files';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
+import { useFileUpload } from '../hooks/useFileUpload';
 import { UploadPanel } from '../components/UploadPanel';
-import type { UploadItem } from '../components/UploadPanel';
 import { ShareDialog } from '../components/ShareDialog';
-import { listShares } from '../lib/shares';
 import type { ShareResourceType } from '../lib/shares';
 import { PdfViewerDialog } from '../components/PdfViewerDialog';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-
-const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+import { CreateFolderDialog } from '../components/CreateFolderDialog';
+import { RenameDialog } from '../components/RenameDialog';
+import { DeleteFolderDialog } from '../components/DeleteFolderDialog';
+import { DeleteFileDialog } from '../components/DeleteFileDialog';
+import { MoveFileDialog } from '../components/MoveFileDialog';
+import { Button } from '@/components/ui/button';
 
 export const DataRoomDetailPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -70,48 +43,24 @@ export const DataRoomDetailPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-
-  const [renameTarget, setRenameTarget] = useState<Folder | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameError, setRenameError] = useState<string | null>(null);
-
-  const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null);
-  const [deleteSummary, setDeleteSummary] = useState<SubtreeSummary | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const [fileDeleteTarget, setFileDeleteTarget] = useState<FileEntry | null>(null);
-  const [isDeletingFile, setIsDeletingFile] = useState(false);
-  const [fileDeleteError, setFileDeleteError] = useState<string | null>(null);
-  const [fileDeleteShareCount, setFileDeleteShareCount] = useState(0);
-
-  const [fileRenameTarget, setFileRenameTarget] = useState<FileEntry | null>(null);
-  const [fileRenameValue, setFileRenameValue] = useState('');
-  const [isRenamingFile, setIsRenamingFile] = useState(false);
-  const [fileRenameError, setFileRenameError] = useState<string | null>(null);
-
-  const [moveTarget, setMoveTarget] = useState<FileEntry | null>(null);
-  const [moveFolders, setMoveFolders] = useState<Folder[]>([]);
-  const [isMoving, setIsMoving] = useState(false);
-  const [moveError, setMoveError] = useState<string | null>(null);
-
+  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  const [renameFolderTarget, setRenameFolderTarget] = useState<Folder | null>(null);
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<Folder | null>(null);
+  const [renameFileTarget, setRenameFileTarget] = useState<FileEntry | null>(null);
+  const [deleteFileTarget, setDeleteFileTarget] = useState<FileEntry | null>(null);
+  const [moveFileTarget, setMoveFileTarget] = useState<FileEntry | null>(null);
   const [shareTarget, setShareTarget] = useState<{
     resourceType: ShareResourceType;
     resourceId: string;
     name: string;
   } | null>(null);
-
   const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(null);
 
-  const [uploads, setUploads] = useState<UploadItem[]>([]);
-  const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const upload = useFileUpload({
+    dataRoomId: id,
+    folderId: currentFolderId,
+    onContentsRefreshed: setContents,
+  });
 
   const load = useCallback(async () => {
     if (!accessToken || !id) return;
@@ -141,75 +90,6 @@ export const DataRoomDetailPage = () => {
     setSearchParams(folderId ? { folder: folderId } : {});
   };
 
-  const handleCreateFolder = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!accessToken || !id) return;
-    setCreateError(null);
-    setIsCreating(true);
-    try {
-      const folder = await createFolder(accessToken, id, newFolderName, currentFolderId);
-      setContents((prev) => (prev ? { ...prev, folders: [...prev.folders, folder] } : prev));
-      setNewFolderName('');
-      setIsCreateOpen(false);
-    } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : 'Failed to create folder');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const openRename = (folder: Folder) => {
-    setRenameTarget(folder);
-    setRenameValue(folder.name);
-    setRenameError(null);
-  };
-
-  const handleRename = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!accessToken || !id || !renameTarget) return;
-    setRenameError(null);
-    setIsRenaming(true);
-    try {
-      const updated = await renameFolder(accessToken, id, renameTarget.id, renameValue);
-      setContents((prev) =>
-        prev
-          ? { ...prev, folders: prev.folders.map((f) => (f.id === updated.id ? updated : f)) }
-          : prev,
-      );
-      setRenameTarget(null);
-    } catch (err) {
-      setRenameError(err instanceof ApiError ? err.message : 'Failed to rename folder');
-    } finally {
-      setIsRenaming(false);
-    }
-  };
-
-  const openFileRename = (file: FileEntry) => {
-    setFileRenameTarget(file);
-    setFileRenameValue(file.name);
-    setFileRenameError(null);
-  };
-
-  const handleFileRename = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!accessToken || !id || !fileRenameTarget) return;
-    setFileRenameError(null);
-    setIsRenamingFile(true);
-    try {
-      const updated = await renameFile(accessToken, id, fileRenameTarget.id, fileRenameValue);
-      setContents((prev) =>
-        prev
-          ? { ...prev, files: prev.files.map((f) => (f.id === updated.id ? updated : f)) }
-          : prev,
-      );
-      setFileRenameTarget(null);
-    } catch (err) {
-      setFileRenameError(err instanceof ApiError ? err.message : 'Failed to rename file');
-    } finally {
-      setIsRenamingFile(false);
-    }
-  };
-
   const handleViewFile = async (file: FileEntry) => {
     if (!accessToken || !id) return;
     try {
@@ -219,216 +99,6 @@ export const DataRoomDetailPage = () => {
       // The eye button just does nothing on failure — no dedicated error UI
       // for this yet.
     }
-  };
-
-  const openMoveDialog = async (file: FileEntry) => {
-    setMoveTarget(file);
-    setMoveError(null);
-    setMoveFolders([]);
-    if (!accessToken || !id) return;
-    try {
-      setMoveFolders(await listAllFolders(accessToken, id));
-    } catch {
-      // Picker just falls back to "Root only" if this fails.
-    }
-  };
-
-  const handleMoveFile = async (folderId: string | undefined) => {
-    if (!accessToken || !id || !moveTarget) return;
-    setIsMoving(true);
-    setMoveError(null);
-    try {
-      await moveFile(accessToken, id, moveTarget.id, folderId);
-      // The file leaves whatever folder is currently open, regardless of
-      // which folder it moved to.
-      setContents((prev) =>
-        prev ? { ...prev, files: prev.files.filter((f) => f.id !== moveTarget.id) } : prev,
-      );
-      setMoveTarget(null);
-    } catch (err) {
-      setMoveError(err instanceof ApiError ? err.message : 'Failed to move file');
-    } finally {
-      setIsMoving(false);
-    }
-  };
-
-  // Adjacency list -> indented list, root folders first then their children
-  // depth-first — same shape the breadcrumb/tree already assumes elsewhere.
-  const buildFolderOptions = (folders: Folder[]) => {
-    const byParent = new Map<string | null, Folder[]>();
-    for (const folder of folders) {
-      const key = folder.parentId;
-      byParent.set(key, [...(byParent.get(key) ?? []), folder]);
-    }
-    const options: { id: string; name: string; depth: number }[] = [];
-    const walk = (parentId: string | null, depth: number) => {
-      for (const folder of byParent.get(parentId) ?? []) {
-        options.push({ id: folder.id, name: folder.name, depth });
-        walk(folder.id, depth + 1);
-      }
-    };
-    walk(null, 0);
-    return options;
-  };
-
-  const openDeleteDialog = async (folder: Folder) => {
-    setDeleteTarget(folder);
-    setDeleteSummary(null);
-    setDeleteError(null);
-    if (!accessToken || !id) return;
-    try {
-      const summary = await getFolderSummary(accessToken, id, folder.id);
-      setDeleteSummary(summary);
-    } catch {
-      // Warning falls back to a generic message below if this fails.
-    }
-  };
-
-  const openFileDeleteDialog = async (file: FileEntry) => {
-    setFileDeleteTarget(file);
-    setFileDeleteError(null);
-    setFileDeleteShareCount(0);
-    if (!accessToken || !id) return;
-    try {
-      const shares = await listShares(accessToken, 'FILE', file.id);
-      setFileDeleteShareCount(shares.length);
-    } catch {
-      // Warning just doesn't show if this fails.
-    }
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!accessToken || !id || !deleteTarget) return;
-    setIsDeleting(true);
-    setDeleteError(null);
-    try {
-      await deleteFolder(accessToken, id, deleteTarget.id);
-      setContents((prev) =>
-        prev
-          ? { ...prev, folders: prev.folders.filter((f) => f.id !== deleteTarget.id) }
-          : prev,
-      );
-      setDeleteTarget(null);
-    } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete folder');
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handleConfirmDeleteFile = async () => {
-    if (!accessToken || !id || !fileDeleteTarget) return;
-    setIsDeletingFile(true);
-    setFileDeleteError(null);
-    try {
-      await deleteFile(accessToken, id, fileDeleteTarget.id);
-      setContents((prev) =>
-        prev
-          ? { ...prev, files: prev.files.filter((f) => f.id !== fileDeleteTarget.id) }
-          : prev,
-      );
-      setFileDeleteTarget(null);
-    } catch (err) {
-      setFileDeleteError(err instanceof ApiError ? err.message : 'Failed to delete file');
-    } finally {
-      setIsDeletingFile(false);
-    }
-  };
-
-  // The browser's PUT to Blob storage finishing doesn't mean our DB row is
-  // READY yet — Vercel's onUploadCompleted callback lands as a separate,
-  // slightly-delayed request. Poll briefly instead of refetching once too
-  // early and showing a stale list.
-  const waitForFileToAppear = async (fileName: string) => {
-    if (!accessToken || !id) return;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      try {
-        const latest = await getContents(accessToken, id, currentFolderId);
-        setContents(latest);
-        if (latest.files.some((file) => file.name === fileName)) return;
-      } catch {
-        // A transient error here just means this attempt didn't refresh the
-        // list; the next attempt (or the user's own reload) will catch up.
-      }
-    }
-  };
-
-  const uploadOne = async (item: UploadItem) => {
-    if (!accessToken || !id) return;
-    try {
-      await uploadFile({
-        file: item.file,
-        dataRoomId: id,
-        folderId: currentFolderId,
-        token: accessToken,
-        onProgress: (percentage) => {
-          setUploads((prev) =>
-            prev.map((u) => (u.id === item.id ? { ...u, progress: percentage } : u)),
-          );
-        },
-      });
-      setUploads((prev) =>
-        prev.map((u) => (u.id === item.id ? { ...u, status: 'done', progress: 100 } : u)),
-      );
-      await waitForFileToAppear(item.file.name);
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Upload failed';
-      setUploads((prev) =>
-        prev.map((u) => (u.id === item.id ? { ...u, status: 'error', error: message } : u)),
-      );
-    }
-  };
-
-  const startUploads = (files: FileList | File[]) => {
-    const rejections: string[] = [];
-    const accepted: File[] = [];
-
-    for (const file of Array.from(files)) {
-      if (file.type !== 'application/pdf') {
-        rejections.push(`"${file.name}" — only PDF files are supported`);
-        continue;
-      }
-      if (file.size > MAX_UPLOAD_SIZE_BYTES) {
-        rejections.push(
-          `"${file.name}" — exceeds the ${formatBytes(MAX_UPLOAD_SIZE_BYTES)} upload limit`,
-        );
-        continue;
-      }
-      accepted.push(file);
-    }
-
-    setUploadValidationError(rejections.length > 0 ? rejections.join('; ') : null);
-
-    const items: UploadItem[] = accepted.map((file) => ({
-      id: crypto.randomUUID(),
-      file,
-      status: 'uploading',
-      progress: 0,
-    }));
-    if (items.length === 0) return;
-    setUploads((prev) => [...prev, ...items]);
-    items.forEach((item) => uploadOne(item));
-  };
-
-  const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files?.length) startUploads(event.target.files);
-    event.target.value = '';
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsDragOver(false);
-    if (event.dataTransfer.files.length) startUploads(event.dataTransfer.files);
-  };
-
-  const retryUpload = (uploadId: string) => {
-    const item = uploads.find((u) => u.id === uploadId);
-    if (!item) return;
-    setUploads((prev) =>
-      prev.map((u) => (u.id === uploadId ? { ...u, status: 'uploading', progress: 0 } : u)),
-    );
-    uploadOne(item);
   };
 
   return (
@@ -465,12 +135,12 @@ export const DataRoomDetailPage = () => {
         </h1>
         <div className="flex items-center gap-2">
           <input
-            ref={fileInputRef}
+            ref={upload.fileInputRef}
             type="file"
             multiple
             accept="application/pdf"
             className="hidden"
-            onChange={handleFileInputChange}
+            onChange={upload.handleFileInputChange}
           />
           <Button
             variant="outline"
@@ -490,49 +160,22 @@ export const DataRoomDetailPage = () => {
             <Share2 className="size-3.5" />
             Share
           </Button>
-          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+          <Button variant="outline" size="sm" onClick={upload.openFilePicker}>
             <UploadIcon className="size-3.5" />
             Upload
           </Button>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm">New Folder</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <form onSubmit={handleCreateFolder}>
-                <DialogHeader>
-                  <DialogTitle>New Folder</DialogTitle>
-                  <DialogDescription>Give the folder a name.</DialogDescription>
-                </DialogHeader>
-                <div className="py-4">
-                  <Input
-                    autoFocus
-                    required
-                    value={newFolderName}
-                    onChange={(event) => setNewFolderName(event.target.value)}
-                    placeholder="Q3 2024"
-                  />
-                  {createError ? (
-                    <p className="mt-2 text-sm text-destructive">{createError}</p>
-                  ) : null}
-                </div>
-                <DialogFooter>
-                  <Button type="submit" disabled={isCreating}>
-                    {isCreating ? 'Creating…' : 'Create'}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button size="sm" onClick={() => setIsCreateFolderOpen(true)}>
+            New Folder
+          </Button>
         </div>
       </div>
 
-      {uploadValidationError ? (
+      {upload.validationError ? (
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          <span className="flex-1">{uploadValidationError}</span>
+          <span className="flex-1">{upload.validationError}</span>
           <button
             type="button"
-            onClick={() => setUploadValidationError(null)}
+            onClick={upload.dismissValidationError}
             className="shrink-0 cursor-pointer text-destructive/70 hover:text-destructive"
           >
             <X className="size-4" />
@@ -540,15 +183,7 @@ export const DataRoomDetailPage = () => {
         </div>
       ) : null}
 
-      <div
-        className="relative"
-        onDragOver={(event) => {
-          event.preventDefault();
-          setIsDragOver(true);
-        }}
-        onDragLeave={() => setIsDragOver(false)}
-        onDrop={handleDrop}
-      >
+      <div className="relative" {...upload.dragHandlers}>
         {isLoading ? (
           <p className="mt-8 text-sm text-muted-foreground">Loading…</p>
         ) : loadError ? (
@@ -560,11 +195,11 @@ export const DataRoomDetailPage = () => {
               Drag and drop PDFs here, or use the buttons below.
             </p>
             <div className="mt-4 flex items-center justify-center gap-2">
-              <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+              <Button size="sm" onClick={upload.openFilePicker}>
                 <UploadIcon className="size-3.5" />
                 Upload
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setIsCreateOpen(true)}>
+              <Button variant="outline" size="sm" onClick={() => setIsCreateFolderOpen(true)}>
                 New Folder
               </Button>
             </div>
@@ -588,7 +223,11 @@ export const DataRoomDetailPage = () => {
                   <button
                     type="button"
                     onClick={() =>
-                      setShareTarget({ resourceType: 'FOLDER', resourceId: folder.id, name: folder.name })
+                      setShareTarget({
+                        resourceType: 'FOLDER',
+                        resourceId: folder.id,
+                        name: folder.name,
+                      })
                     }
                     className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Share"
@@ -597,7 +236,7 @@ export const DataRoomDetailPage = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openRename(folder)}
+                    onClick={() => setRenameFolderTarget(folder)}
                     className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Rename"
                   >
@@ -605,7 +244,7 @@ export const DataRoomDetailPage = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openDeleteDialog(folder)}
+                    onClick={() => setDeleteFolderTarget(folder)}
                     className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Delete"
                   >
@@ -647,7 +286,7 @@ export const DataRoomDetailPage = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openMoveDialog(file)}
+                    onClick={() => setMoveFileTarget(file)}
                     className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Move"
                   >
@@ -655,7 +294,7 @@ export const DataRoomDetailPage = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openFileRename(file)}
+                    onClick={() => setRenameFileTarget(file)}
                     className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Rename"
                   >
@@ -663,7 +302,7 @@ export const DataRoomDetailPage = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openFileDeleteDialog(file)}
+                    onClick={() => setDeleteFileTarget(file)}
                     className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Delete"
                   >
@@ -675,7 +314,7 @@ export const DataRoomDetailPage = () => {
           </div>
         )}
 
-        {isDragOver ? (
+        {upload.isDragOver ? (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-primary bg-primary/[0.06]">
             <UploadIcon className="size-6 text-primary" />
             <p className="text-sm font-semibold text-accent-foreground">Drop PDFs to upload</p>
@@ -684,173 +323,106 @@ export const DataRoomDetailPage = () => {
       </div>
 
       <UploadPanel
-        items={uploads}
-        onDismiss={() => setUploads([])}
-        onRetry={retryUpload}
+        items={upload.uploads}
+        onDismiss={upload.dismissUploads}
+        onRetry={upload.retryUpload}
       />
 
-      {/* Rename dialog */}
-      <Dialog open={!!renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)}>
-        <DialogContent>
-          <form onSubmit={handleRename}>
-            <DialogHeader>
-              <DialogTitle>Rename folder</DialogTitle>
-            </DialogHeader>
-            <div className="py-4">
-              <Input
-                autoFocus
-                required
-                value={renameValue}
-                onChange={(event) => setRenameValue(event.target.value)}
-              />
-              {renameError ? (
-                <p className="mt-2 text-sm text-destructive">{renameError}</p>
-              ) : null}
-            </div>
-            <DialogFooter>
-              <Button type="submit" disabled={isRenaming}>
-                {isRenaming ? 'Saving…' : 'Save'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {id ? (
+        <CreateFolderDialog
+          open={isCreateFolderOpen}
+          onOpenChange={setIsCreateFolderOpen}
+          dataRoomId={id}
+          parentId={currentFolderId}
+          onCreated={(folder) =>
+            setContents((prev) => (prev ? { ...prev, folders: [...prev.folders, folder] } : prev))
+          }
+        />
+      ) : null}
 
-      {/* File rename dialog */}
-      <Dialog
-        open={!!fileRenameTarget}
-        onOpenChange={(open) => !open && setFileRenameTarget(null)}
-      >
-        <DialogContent>
-          <form onSubmit={handleFileRename}>
-            <DialogHeader>
-              <DialogTitle>Rename file</DialogTitle>
-            </DialogHeader>
-            <div className="py-4">
-              <Input
-                autoFocus
-                required
-                value={fileRenameValue}
-                onChange={(event) => setFileRenameValue(event.target.value)}
-              />
-              {fileRenameError ? (
-                <p className="mt-2 text-sm text-destructive">{fileRenameError}</p>
-              ) : null}
-            </div>
-            <DialogFooter>
-              <Button type="submit" disabled={isRenamingFile}>
-                {isRenamingFile ? 'Saving…' : 'Save'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {renameFolderTarget && id && accessToken ? (
+        <RenameDialog
+          title="Rename folder"
+          currentName={renameFolderTarget.name}
+          errorFallback="Failed to rename folder"
+          onClose={() => setRenameFolderTarget(null)}
+          onRename={async (name) => {
+            const updated = await renameFolder(accessToken, id, renameFolderTarget.id, name);
+            setContents((prev) =>
+              prev
+                ? { ...prev, folders: prev.folders.map((f) => (f.id === updated.id ? updated : f)) }
+                : prev,
+            );
+            setRenameFolderTarget(null);
+          }}
+        />
+      ) : null}
 
-      {/* Move dialog */}
-      <Dialog open={!!moveTarget} onOpenChange={(open) => !open && setMoveTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Move &ldquo;{moveTarget?.name}&rdquo;</DialogTitle>
-            <DialogDescription>Choose a destination folder.</DialogDescription>
-          </DialogHeader>
-          <div className="max-h-64 overflow-y-auto rounded-md border border-border">
-            <button
-              type="button"
-              disabled={isMoving || moveTarget?.folderId === null}
-              onClick={() => handleMoveFile(undefined)}
-              className="flex w-full cursor-pointer items-center gap-2 border-b border-border px-3 py-2 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:cursor-default disabled:opacity-50"
-            >
-              <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-              Root
-            </button>
-            {buildFolderOptions(moveFolders).map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                disabled={isMoving || moveTarget?.folderId === option.id}
-                onClick={() => handleMoveFile(option.id)}
-                style={{ paddingLeft: `${12 + option.depth * 16}px` }}
-                className="flex w-full cursor-pointer items-center gap-2 border-b border-border py-2 pr-3 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:cursor-default disabled:opacity-50"
-              >
-                <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-                {option.name}
-              </button>
-            ))}
-          </div>
-          {moveError ? <p className="text-sm text-destructive">{moveError}</p> : null}
-        </DialogContent>
-      </Dialog>
+      {renameFileTarget && id && accessToken ? (
+        <RenameDialog
+          title="Rename file"
+          currentName={renameFileTarget.name}
+          errorFallback="Failed to rename file"
+          onClose={() => setRenameFileTarget(null)}
+          onRename={async (name) => {
+            const updated = await renameFile(accessToken, id, renameFileTarget.id, name);
+            setContents((prev) =>
+              prev
+                ? { ...prev, files: prev.files.map((f) => (f.id === updated.id ? updated : f)) }
+                : prev,
+            );
+            setRenameFileTarget(null);
+          }}
+        />
+      ) : null}
 
-      {/* Delete confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete &ldquo;{deleteTarget?.name}&rdquo;?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteSummary
-                ? `This will permanently delete ${deleteSummary.subfolderCount} subfolder(s) and ${deleteSummary.fileCount} file(s) (${formatBytes(deleteSummary.totalSizeBytes)}). This action cannot be undone.`
-                : 'Calculating what will be deleted…'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {deleteSummary && deleteSummary.activeShareCount > 0 ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {deleteSummary.activeShareCount} active share link
-              {deleteSummary.activeShareCount === 1 ? '' : 's'} will stop working.
-            </p>
-          ) : null}
-          {deleteError ? <p className="text-sm text-destructive">{deleteError}</p> : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={isDeleting}
-              onClick={(event) => {
-                event.preventDefault();
-                handleConfirmDelete();
-              }}
-              className={buttonVariants({ variant: 'destructive' })}
-            >
-              {isDeleting ? 'Deleting…' : 'Delete permanently'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {deleteFolderTarget && id ? (
+        <DeleteFolderDialog
+          target={deleteFolderTarget}
+          dataRoomId={id}
+          onClose={() => setDeleteFolderTarget(null)}
+          onDeleted={(folderId) => {
+            setContents((prev) =>
+              prev ? { ...prev, folders: prev.folders.filter((f) => f.id !== folderId) } : prev,
+            );
+            setDeleteFolderTarget(null);
+          }}
+        />
+      ) : null}
 
-      {/* File delete confirmation */}
-      <AlertDialog
-        open={!!fileDeleteTarget}
-        onOpenChange={(open) => !open && setFileDeleteTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete &ldquo;{fileDeleteTarget?.name}&rdquo;?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
-          </AlertDialogHeader>
-          {fileDeleteShareCount > 0 ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {fileDeleteShareCount} active share link{fileDeleteShareCount === 1 ? '' : 's'} will
-              stop working.
-            </p>
-          ) : null}
-          {fileDeleteError ? <p className="text-sm text-destructive">{fileDeleteError}</p> : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={isDeletingFile}
-              onClick={(event) => {
-                event.preventDefault();
-                handleConfirmDeleteFile();
-              }}
-              className={buttonVariants({ variant: 'destructive' })}
-            >
-              {isDeletingFile ? 'Deleting…' : 'Delete permanently'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {deleteFileTarget && id ? (
+        <DeleteFileDialog
+          target={deleteFileTarget}
+          dataRoomId={id}
+          onClose={() => setDeleteFileTarget(null)}
+          onDeleted={(fileId) => {
+            setContents((prev) =>
+              prev ? { ...prev, files: prev.files.filter((f) => f.id !== fileId) } : prev,
+            );
+            setDeleteFileTarget(null);
+          }}
+        />
+      ) : null}
+
+      {moveFileTarget && id ? (
+        <MoveFileDialog
+          target={moveFileTarget}
+          dataRoomId={id}
+          onClose={() => setMoveFileTarget(null)}
+          onMoved={(fileId) => {
+            // The file leaves whatever folder is currently open, regardless
+            // of which folder it moved to.
+            setContents((prev) =>
+              prev ? { ...prev, files: prev.files.filter((f) => f.id !== fileId) } : prev,
+            );
+            setMoveFileTarget(null);
+          }}
+        />
+      ) : null}
 
       {shareTarget ? (
         <ShareDialog
-          open={!!shareTarget}
+          open
           onOpenChange={(open) => !open && setShareTarget(null)}
           resourceType={shareTarget.resourceType}
           resourceId={shareTarget.resourceId}
