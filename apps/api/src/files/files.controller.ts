@@ -18,6 +18,7 @@ import type { HandleUploadBody } from '@vercel/blob/client';
 import { FilesService } from './files.service';
 import { UpdateFileDto } from './dto/update-file.dto';
 import { MoveFileDto } from './dto/move-file.dto';
+import { SearchFilesDto } from './dto/search-files.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { RequestUser } from '../common/decorators/current-user.decorator';
@@ -40,6 +41,18 @@ export class FilesController {
     @Query('folderId') folderId?: string,
   ) {
     return this.filesService.handleUploadRequest(request, body, dataRoomId, folderId);
+  }
+
+  // Declared before the ':fileId' routes so the literal segment is the one
+  // that matches — Nest resolves in declaration order.
+  @UseGuards(JwtAuthGuard)
+  @Get('search')
+  search(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Query() query: SearchFilesDto,
+  ) {
+    return this.filesService.search(user.userId, dataRoomId, query.q);
   }
 
   @UseGuards(JwtAuthGuard)

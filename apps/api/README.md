@@ -59,6 +59,7 @@ All routes require a bearer token except `/auth/*` and `/public/*`.
 | `GET` | `/data-rooms/:id/folders/:folderId/path` | breadcrumb chain |
 | `GET` | `/data-rooms/:id/folders/:folderId/summary` | recursive subtree totals |
 | `POST` | `/data-rooms/:id/files/upload` | issue upload token / receive Vercel callback |
+| `GET` | `/data-rooms/:id/files/search?q=` | file-name search across the whole room |
 | `GET` | `/data-rooms/:id/files/:fileId/content` | stream the PDF |
 | `PATCH` | `/data-rooms/:id/files/:fileId` `/…/move` | rename, move |
 | `DELETE` | `/data-rooms/:id/files/:fileId` | delete file and blob |

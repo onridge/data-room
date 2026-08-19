@@ -24,6 +24,9 @@ delete with a warning that spells out exactly how many subfolders and files will
 **Files** — multi-file upload with drag-and-drop and per-file progress, in-app PDF viewing with
 page navigation, rename with conflict detection, move between folders, delete.
 
+**Search** — find a file by name across an entire Data Room, not just the open folder. Each
+result shows the folder path it lives in, and clicking that path jumps straight there.
+
 **Sharing** — share a Data Room, a folder, or a single file. Two modes: a public link that
 anyone can open without an account, and a permissioned share granted to specific registered
 users. Access cascades: sharing a Data Room or folder shares everything nested inside it. The
@@ -272,8 +275,14 @@ with `WHERE status = 'READY'` keeps half-finished uploads out of the index entir
 **The response should get narrower too** — listings select whole rows today, including
 `storageKey`, which the list view never uses.
 
-**Search** (currently not implemented) would need its own index rather than a `LIKE` scan: a
-`pg_trgm` GIN index on `name` for substring matching.
+**Search is the clearest example of a deliberate trade-off.** It is implemented as a
+case-insensitive `ILIKE '%query%'` across the data room, capped at 50 rows. A leading wildcard
+cannot use a B-tree index, so this is a sequential scan over the room's files — which is the
+right call at a few hundred or few thousand files, and buys the feature without a migration.
+At the scale above it becomes the bottleneck, and the fix is a `pg_trgm` GIN index on `name`,
+which *can* serve a leading wildcard. Beyond that — searching document contents rather than
+file names — the answer stops being an index and becomes a separate full-text store fed by the
+upload pipeline.
 
 **The subtree CTE becomes the next bottleneck**, which is the point where the denormalised
 counters described above stop being optional.
@@ -332,9 +341,12 @@ unimplemented features.
 
 Called out explicitly, since the brief asks for a design without unimplemented features on show:
 
-- **Search and filtering** by file name (listed as optional extra credit)
-- **File versioning** on name conflicts (optional extra credit) — conflicts are resolved by
-  auto-renaming on upload and by rejecting on explicit rename
+- **File versioning** on name conflicts (optional extra credit) — a deliberate omission rather
+  than a missing feature. Conflicts are resolved instead by Drive-style auto-renaming on upload
+  (`Report.pdf` → `Report (1).pdf`) and by rejecting an explicit rename with a 409. Real
+  versioning would mean splitting `File` into a logical document plus a `FileVersion` row
+  holding `storageKey`, size and version number, and teaching every listing, search and stream
+  path to resolve "current version" — a data-model change too broad to bolt on late
 - **`EDITOR` role enforcement** — modelled, not wired up; sharing is read-only by design
 - **A "shared with me" listing** — recipients reach shared items by link; shares do not surface
   in their own Data Rooms list

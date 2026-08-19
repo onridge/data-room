@@ -30,6 +30,20 @@ interface UploadTokenPayload {
 // nicer message — this is the one that actually binds.
 const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 
+// Capped rather than paginated: search is a "jump to the file I mean" tool,
+// and a query matching more than this many files is one worth narrowing.
+const SEARCH_RESULT_LIMIT = 50;
+
+// Prisma's `contains` becomes an ILIKE with the value interpolated between
+// two wildcards, and it does not escape LIKE metacharacters — so a query of
+// "%" would match every file and "_" would match any single character.
+// That's not an injection (the value is still bound as a parameter), just a
+// search that lies. Escaping makes them match literally, which is what
+// someone typing them into a search box means. Postgres LIKE treats
+// backslash as the escape character by default, so no ESCAPE clause needed.
+const escapeLikeMetacharacters = (value: string) =>
+  value.replace(/[\\%_]/g, (character) => `\\${character}`);
+
 @Injectable()
 export class FilesService {
   constructor(
@@ -85,13 +99,17 @@ export class FilesService {
     }
   }
 
-  private async getOwnedFile(ownerId: string, dataRoomId: string, fileId: string) {
+  private async assertDataRoomOwnership(ownerId: string, dataRoomId: string) {
     const dataRoom = await this.prisma.dataRoom.findFirst({
       where: { id: dataRoomId, ownerId },
     });
     if (!dataRoom) {
       throw new NotFoundException('Data room not found');
     }
+  }
+
+  private async getOwnedFile(ownerId: string, dataRoomId: string, fileId: string) {
+    await this.assertDataRoomOwnership(ownerId, dataRoomId);
     const file = await this.prisma.file.findFirst({ where: { id: fileId, dataRoomId } });
     if (!file) {
       throw new NotFoundException('File not found');
@@ -150,6 +168,59 @@ export class FilesService {
       }
       throw error;
     }
+  }
+
+  // Search spans the whole data room, not the open folder — a due-diligence
+  // reviewer looking for "Q3 financials" doesn't know which folder it was
+  // filed under, which is the entire point of searching.
+  //
+  // `contains` compiles to an unindexed ILIKE '%q%' scan. That is the right
+  // trade-off at this size (a data room holds hundreds of files, not
+  // millions) and deliberately avoids a migration; README "How it scales"
+  // records the pg_trgm GIN index this becomes when the scan stops being
+  // free.
+  async search(ownerId: string, dataRoomId: string, query: string) {
+    await this.assertDataRoomOwnership(ownerId, dataRoomId);
+
+    // One folder fetch instead of walking each result's ancestor chain
+    // separately: a data room's folder count is small, and building the
+    // paths in memory keeps this at two queries no matter how many files
+    // match.
+    const [files, folders] = await Promise.all([
+      this.prisma.file.findMany({
+        where: {
+          dataRoomId,
+          status: 'READY',
+          name: {
+            contains: escapeLikeMetacharacters(query),
+            mode: 'insensitive',
+          },
+        },
+        select: { id: true, name: true, sizeBytes: true, folderId: true },
+        orderBy: { name: 'asc' },
+        take: SEARCH_RESULT_LIMIT,
+      }),
+      this.prisma.folder.findMany({
+        where: { dataRoomId },
+        select: { id: true, name: true, parentId: true },
+      }),
+    ]);
+
+    const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
+
+    const buildPath = (folderId: string | null) => {
+      const path: { id: string; name: string }[] = [];
+      let currentId = folderId;
+      while (currentId) {
+        const folder = foldersById.get(currentId);
+        if (!folder) break;
+        path.unshift({ id: folder.id, name: folder.name });
+        currentId = folder.parentId;
+      }
+      return path;
+    };
+
+    return files.map((file) => ({ ...file, path: buildPath(file.folderId) }));
   }
 
   // Blob access is 'private', so the stored URL isn't fetchable directly —

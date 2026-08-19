@@ -6,6 +6,7 @@ import {
   Folder as FolderIcon,
   FolderInput,
   Pencil,
+  Search,
   Share2,
   Trash2,
   Upload as UploadIcon,
@@ -17,6 +18,8 @@ import type { DataRoom } from '../lib/data-rooms';
 import { getContents, getFolderPath, renameFolder } from '../lib/folders';
 import type { BreadcrumbEntry, FileEntry, Folder, FolderContents } from '../lib/folders';
 import { renameFile, viewFile } from '../lib/files';
+import { useFileSearch } from '../hooks/useFileSearch';
+import { FileSearchResults } from '../components/FileSearchResults';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { useFileUpload } from '../hooks/useFileUpload';
@@ -56,6 +59,8 @@ export const DataRoomDetailPage = () => {
   } | null>(null);
   const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(null);
 
+  const search = useFileSearch({ dataRoomId: id });
+
   const upload = useFileUpload({
     dataRoomId: id,
     folderId: currentFolderId,
@@ -90,7 +95,16 @@ export const DataRoomDetailPage = () => {
     setSearchParams(folderId ? { folder: folderId } : {});
   };
 
-  const handleViewFile = async (file: FileEntry) => {
+  // Jumping to a search result's folder leaves search mode — otherwise the
+  // results list would stay up over the folder the user just asked to see.
+  const openFolderFromSearch = (folderId?: string) => {
+    search.clearQuery();
+    navigateToFolder(folderId);
+  };
+
+  // Structurally typed rather than tied to FileEntry, so a search result
+  // (which carries a path instead of a folder object) works unchanged.
+  const handleViewFile = async (file: { id: string; name: string }) => {
     if (!accessToken || !id) return;
     try {
       const objectUrl = await viewFile(accessToken, id, file.id);
@@ -142,6 +156,29 @@ export const DataRoomDetailPage = () => {
             className="hidden"
             onChange={upload.handleFileInputChange}
           />
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            {/* The native WebKit clear button is suppressed in favour of the
+                styled one below — otherwise the field shows two crosses. */}
+            <input
+              type="search"
+              value={search.query}
+              onChange={(event) => search.setQuery(event.target.value)}
+              placeholder="Search files…"
+              aria-label="Search files"
+              className="h-8 w-56 rounded-lg border border-input bg-background pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none [&::-webkit-search-cancel-button]:appearance-none"
+            />
+            {search.query ? (
+              <button
+                type="button"
+                onClick={search.clearQuery}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : null}
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -153,7 +190,11 @@ export const DataRoomDetailPage = () => {
                       resourceId: currentFolderId,
                       name: breadcrumb.at(-1)?.name ?? '',
                     }
-                  : { resourceType: 'DATA_ROOM', resourceId: id ?? '', name: dataRoom?.name ?? '' },
+                  : {
+                      resourceType: 'DATA_ROOM',
+                      resourceId: id ?? '',
+                      name: dataRoom?.name ?? '',
+                    },
               )
             }
           >
@@ -183,144 +224,159 @@ export const DataRoomDetailPage = () => {
         </div>
       ) : null}
 
-      <div className="relative" {...upload.dragHandlers}>
-        {isLoading ? (
-          <p className="mt-8 text-sm text-muted-foreground">Loading…</p>
-        ) : loadError ? (
-          <p className="mt-8 text-sm text-destructive">{loadError}</p>
-        ) : contents && contents.folders.length === 0 && contents.files.length === 0 ? (
-          <div className="mt-8 rounded-lg border border-dashed border-input p-8 text-center">
-            <p className="text-sm font-medium text-foreground">Folder is empty</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Drag and drop PDFs here, or use the buttons below.
-            </p>
-            <div className="mt-4 flex items-center justify-center gap-2">
-              <Button size="sm" onClick={upload.openFilePicker}>
-                <UploadIcon className="size-3.5" />
-                Upload
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setIsCreateFolderOpen(true)}>
-                New Folder
-              </Button>
+      {search.isSearchActive ? (
+        <FileSearchResults
+          results={search.results}
+          isSearching={search.isSearching}
+          searchError={search.searchError}
+          query={search.query.trim()}
+          onOpenFolder={openFolderFromSearch}
+          onViewFile={handleViewFile}
+        />
+      ) : (
+        <div className="relative" {...upload.dragHandlers}>
+          {isLoading ? (
+            <p className="mt-8 text-sm text-muted-foreground">Loading…</p>
+          ) : loadError ? (
+            <p className="mt-8 text-sm text-destructive">{loadError}</p>
+          ) : contents && contents.folders.length === 0 && contents.files.length === 0 ? (
+            <div className="mt-8 rounded-lg border border-dashed border-input p-8 text-center">
+              <p className="text-sm font-medium text-foreground">Folder is empty</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Drag and drop PDFs here, or use the buttons below.
+              </p>
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <Button size="sm" onClick={upload.openFilePicker}>
+                  <UploadIcon className="size-3.5" />
+                  Upload
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setIsCreateFolderOpen(true)}>
+                  New Folder
+                </Button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="mt-6 overflow-hidden rounded-lg border border-border">
-            {contents?.folders.map((folder) => (
-              <div
-                key={folder.id}
-                className="group flex h-(--dr-table-row-h) items-center justify-between border-b border-border px-3 last:border-b-0 hover:bg-muted/60"
-              >
-                <button
-                  type="button"
-                  onClick={() => navigateToFolder(folder.id)}
-                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
+          ) : (
+            <div className="mt-6 overflow-hidden rounded-lg border border-border">
+              {contents?.folders.map((folder) => (
+                <div
+                  key={folder.id}
+                  className="group flex h-(--dr-table-row-h) items-center justify-between border-b border-border px-3 last:border-b-0 hover:bg-muted/60"
                 >
-                  <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate text-row-primary text-foreground">{folder.name}</span>
-                </button>
-                <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
                   <button
                     type="button"
-                    onClick={() =>
-                      setShareTarget({
-                        resourceType: 'FOLDER',
-                        resourceId: folder.id,
-                        name: folder.name,
-                      })
-                    }
-                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Share"
+                    onClick={() => navigateToFolder(folder.id)}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
                   >
-                    <Share2 className="size-3.5" />
+                    <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate text-row-primary text-foreground">{folder.name}</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setRenameFolderTarget(folder)}
-                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Rename"
-                  >
-                    <Pencil className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteFolderTarget(folder)}
-                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    aria-label="Delete"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShareTarget({
+                          resourceType: 'FOLDER',
+                          resourceId: folder.id,
+                          name: folder.name,
+                        })
+                      }
+                      className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="Share"
+                    >
+                      <Share2 className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRenameFolderTarget(folder)}
+                      className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="Rename"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteFolderTarget(folder)}
+                      className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      aria-label="Delete"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-            {contents?.files.map((file) => (
-              <div
-                key={file.id}
-                className="group flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
-              >
-                <FileText className="size-4 shrink-0 text-red-500 dark:text-red-400" />
-                <span className="min-w-0 flex-1 truncate text-row-primary text-foreground">
-                  {file.name}
-                </span>
-                <span className="shrink-0 text-row-secondary tabular-nums text-muted-foreground">
-                  {formatBytes(file.sizeBytes)}
-                </span>
-                <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShareTarget({ resourceType: 'FILE', resourceId: file.id, name: file.name })
-                    }
-                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Share"
-                  >
-                    <Share2 className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleViewFile(file)}
-                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="View"
-                  >
-                    <Eye className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMoveFileTarget(file)}
-                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Move"
-                  >
-                    <FolderInput className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRenameFileTarget(file)}
-                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Rename"
-                  >
-                    <Pencil className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteFileTarget(file)}
-                    className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    aria-label="Delete"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
+              ))}
+              {contents?.files.map((file) => (
+                <div
+                  key={file.id}
+                  className="group flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
+                >
+                  <FileText className="size-4 shrink-0 text-red-500 dark:text-red-400" />
+                  <span className="min-w-0 flex-1 truncate text-row-primary text-foreground">
+                    {file.name}
+                  </span>
+                  <span className="shrink-0 text-row-secondary tabular-nums text-muted-foreground">
+                    {formatBytes(file.sizeBytes)}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShareTarget({
+                          resourceType: 'FILE',
+                          resourceId: file.id,
+                          name: file.name,
+                        })
+                      }
+                      className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="Share"
+                    >
+                      <Share2 className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleViewFile(file)}
+                      className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="View"
+                    >
+                      <Eye className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMoveFileTarget(file)}
+                      className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="Move"
+                    >
+                      <FolderInput className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRenameFileTarget(file)}
+                      className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="Rename"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteFileTarget(file)}
+                      className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      aria-label="Delete"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
 
-        {upload.isDragOver ? (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-primary bg-primary/[0.06]">
-            <UploadIcon className="size-6 text-primary" />
-            <p className="text-sm font-semibold text-accent-foreground">Drop PDFs to upload</p>
-          </div>
-        ) : null}
-      </div>
+          {upload.isDragOver ? (
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-primary bg-primary/[0.06]">
+              <UploadIcon className="size-6 text-primary" />
+              <p className="text-sm font-semibold text-accent-foreground">Drop PDFs to upload</p>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       <UploadPanel
         items={upload.uploads}
@@ -350,7 +406,10 @@ export const DataRoomDetailPage = () => {
             const updated = await renameFolder(accessToken, id, renameFolderTarget.id, name);
             setContents((prev) =>
               prev
-                ? { ...prev, folders: prev.folders.map((f) => (f.id === updated.id ? updated : f)) }
+                ? {
+                    ...prev,
+                    folders: prev.folders.map((f) => (f.id === updated.id ? updated : f)),
+                  }
                 : prev,
             );
             setRenameFolderTarget(null);
@@ -368,7 +427,10 @@ export const DataRoomDetailPage = () => {
             const updated = await renameFile(accessToken, id, renameFileTarget.id, name);
             setContents((prev) =>
               prev
-                ? { ...prev, files: prev.files.map((f) => (f.id === updated.id ? updated : f)) }
+                ? {
+                    ...prev,
+                    files: prev.files.map((f) => (f.id === updated.id ? updated : f)),
+                  }
                 : prev,
             );
             setRenameFileTarget(null);
@@ -383,7 +445,12 @@ export const DataRoomDetailPage = () => {
           onClose={() => setDeleteFolderTarget(null)}
           onDeleted={(folderId) => {
             setContents((prev) =>
-              prev ? { ...prev, folders: prev.folders.filter((f) => f.id !== folderId) } : prev,
+              prev
+                ? {
+                    ...prev,
+                    folders: prev.folders.filter((f) => f.id !== folderId),
+                  }
+                : prev,
             );
             setDeleteFolderTarget(null);
           }}
