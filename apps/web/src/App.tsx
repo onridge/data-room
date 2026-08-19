@@ -5,6 +5,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { DataRoomsPage } from './pages/DataRoomsPage';
 import { DataRoomDetailPage } from './pages/DataRoomDetailPage';
+import { PublicSharePage } from './pages/PublicSharePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 const App = () => {
@@ -15,6 +16,7 @@ const App = () => {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/share/:token" element={<PublicSharePage />} />
             <Route
               path="/"
               element={
