@@ -7,6 +7,7 @@ import {
   Folder as FolderIcon,
   FolderInput,
   Pencil,
+  Share2,
   Trash2,
   Upload as UploadIcon,
   X,
@@ -29,6 +30,8 @@ import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { UploadPanel } from '../components/UploadPanel';
 import type { UploadItem } from '../components/UploadPanel';
+import { ShareDialog } from '../components/ShareDialog';
+import type { ShareResourceType } from '../lib/shares';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -93,6 +96,12 @@ export const DataRoomDetailPage = () => {
   const [moveFolders, setMoveFolders] = useState<Folder[]>([]);
   const [isMoving, setIsMoving] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
+
+  const [shareTarget, setShareTarget] = useState<{
+    resourceType: ShareResourceType;
+    resourceId: string;
+    name: string;
+  } | null>(null);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
@@ -447,6 +456,24 @@ export const DataRoomDetailPage = () => {
             className="hidden"
             onChange={handleFileInputChange}
           />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setShareTarget(
+                currentFolderId
+                  ? {
+                      resourceType: 'FOLDER',
+                      resourceId: currentFolderId,
+                      name: breadcrumb.at(-1)?.name ?? '',
+                    }
+                  : { resourceType: 'DATA_ROOM', resourceId: id ?? '', name: dataRoom?.name ?? '' },
+              )
+            }
+          >
+            <Share2 className="size-3.5" />
+            Share
+          </Button>
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
             <UploadIcon className="size-3.5" />
             Upload
@@ -535,6 +562,16 @@ export const DataRoomDetailPage = () => {
                 <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
                   <button
                     type="button"
+                    onClick={() =>
+                      setShareTarget({ resourceType: 'FOLDER', resourceId: folder.id, name: folder.name })
+                    }
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Share"
+                  >
+                    <Share2 className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => openRename(folder)}
                     className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Rename"
@@ -565,6 +602,16 @@ export const DataRoomDetailPage = () => {
                   {formatBytes(file.sizeBytes)}
                 </span>
                 <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShareTarget({ resourceType: 'FILE', resourceId: file.id, name: file.name })
+                    }
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Share"
+                  >
+                    <Share2 className="size-3.5" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleViewFile(file)}
@@ -766,6 +813,16 @@ export const DataRoomDetailPage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {shareTarget ? (
+        <ShareDialog
+          open={!!shareTarget}
+          onOpenChange={(open) => !open && setShareTarget(null)}
+          resourceType={shareTarget.resourceType}
+          resourceId={shareTarget.resourceId}
+          resourceName={shareTarget.name}
+        />
+      ) : null}
     </div>
   );
 };
