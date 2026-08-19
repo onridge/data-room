@@ -1,16 +1,23 @@
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import type { IncomingMessage } from 'node:http';
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { head } from '@vercel/blob';
+import { Prisma } from '@prisma/client';
+import { del, get, head } from '@vercel/blob';
 import { handleUpload } from '@vercel/blob/client';
 import type { HandleUploadBody } from '@vercel/blob/client';
+import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { getJwtSecret } from '../auth/jwt-secret.util';
+import { UpdateFileDto } from './dto/update-file.dto';
+import { MoveFileDto } from './dto/move-file.dto';
 
 interface UploadTokenPayload {
   fileId: string;
@@ -68,6 +75,85 @@ export class FilesService {
       candidate = `${base} (${attempt})${ext}`;
       attempt += 1;
     }
+  }
+
+  private async getOwnedFile(ownerId: string, dataRoomId: string, fileId: string) {
+    const dataRoom = await this.prisma.dataRoom.findFirst({
+      where: { id: dataRoomId, ownerId },
+    });
+    if (!dataRoom) {
+      throw new NotFoundException('Data room not found');
+    }
+    const file = await this.prisma.file.findFirst({ where: { id: fileId, dataRoomId } });
+    if (!file) {
+      throw new NotFoundException('File not found');
+    }
+    return file;
+  }
+
+  async rename(ownerId: string, dataRoomId: string, fileId: string, dto: UpdateFileDto) {
+    await this.getOwnedFile(ownerId, dataRoomId, fileId);
+    try {
+      return await this.prisma.file.update({
+        where: { id: fileId },
+        data: { name: dto.name },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('A file with this name already exists here');
+      }
+      throw error;
+    }
+  }
+
+  async move(ownerId: string, dataRoomId: string, fileId: string, dto: MoveFileDto) {
+    await this.getOwnedFile(ownerId, dataRoomId, fileId);
+    if (dto.folderId) {
+      const folder = await this.prisma.folder.findFirst({
+        where: { id: dto.folderId, dataRoomId },
+      });
+      if (!folder) {
+        throw new NotFoundException('Folder not found');
+      }
+    }
+    try {
+      return await this.prisma.file.update({
+        where: { id: fileId },
+        data: { folderId: dto.folderId ?? null },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('A file with this name already exists in that folder');
+      }
+      throw error;
+    }
+  }
+
+  // Blob access is 'private', so the stored URL isn't fetchable directly —
+  // this proxies the content through our own auth instead of handing out a
+  // signed URL, keeping the same JwtAuthGuard check as everything else.
+  async streamContent(ownerId: string, dataRoomId: string, fileId: string, res: Response) {
+    const file = await this.getOwnedFile(ownerId, dataRoomId, fileId);
+    if (file.status !== 'READY') {
+      throw new NotFoundException('File not found');
+    }
+    const result = await get(file.storageKey, { access: 'private' });
+    if (!result || result.statusCode !== 200) {
+      throw new NotFoundException('File not found');
+    }
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.name)}"`);
+    Readable.fromWeb(result.stream as unknown as NodeReadableStream).pipe(res);
+  }
+
+  async remove(ownerId: string, dataRoomId: string, fileId: string) {
+    const file = await this.getOwnedFile(ownerId, dataRoomId, fileId);
+    // A file stuck in PENDING never got a real blob (storageKey is still the
+    // placeholder), so there's nothing to delete from the store.
+    if (file.status === 'READY') {
+      await del(file.storageKey);
+    }
+    await this.prisma.file.delete({ where: { id: fileId } });
   }
 
   async handleUploadRequest(

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
+  Eye,
   FileText,
   Folder as FolderIcon,
+  FolderInput,
   Pencil,
   Trash2,
   Upload as UploadIcon,
@@ -18,10 +20,11 @@ import {
   getContents,
   getFolderPath,
   getFolderSummary,
+  listAllFolders,
   renameFolder,
 } from '../lib/folders';
-import type { BreadcrumbEntry, Folder, FolderContents, SubtreeSummary } from '../lib/folders';
-import { uploadFile } from '../lib/files';
+import type { BreadcrumbEntry, FileEntry, Folder, FolderContents, SubtreeSummary } from '../lib/folders';
+import { deleteFile, moveFile, renameFile, uploadFile, viewFile } from '../lib/files';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { UploadPanel } from '../components/UploadPanel';
@@ -76,6 +79,20 @@ export const DataRoomDetailPage = () => {
   const [deleteSummary, setDeleteSummary] = useState<SubtreeSummary | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [fileDeleteTarget, setFileDeleteTarget] = useState<FileEntry | null>(null);
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
+  const [fileDeleteError, setFileDeleteError] = useState<string | null>(null);
+
+  const [fileRenameTarget, setFileRenameTarget] = useState<FileEntry | null>(null);
+  const [fileRenameValue, setFileRenameValue] = useState('');
+  const [isRenamingFile, setIsRenamingFile] = useState(false);
+  const [fileRenameError, setFileRenameError] = useState<string | null>(null);
+
+  const [moveTarget, setMoveTarget] = useState<FileEntry | null>(null);
+  const [moveFolders, setMoveFolders] = useState<Folder[]>([]);
+  const [isMoving, setIsMoving] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
@@ -153,6 +170,95 @@ export const DataRoomDetailPage = () => {
     }
   };
 
+  const openFileRename = (file: FileEntry) => {
+    setFileRenameTarget(file);
+    setFileRenameValue(file.name);
+    setFileRenameError(null);
+  };
+
+  const handleFileRename = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!accessToken || !id || !fileRenameTarget) return;
+    setFileRenameError(null);
+    setIsRenamingFile(true);
+    try {
+      const updated = await renameFile(accessToken, id, fileRenameTarget.id, fileRenameValue);
+      setContents((prev) =>
+        prev
+          ? { ...prev, files: prev.files.map((f) => (f.id === updated.id ? updated : f)) }
+          : prev,
+      );
+      setFileRenameTarget(null);
+    } catch (err) {
+      setFileRenameError(err instanceof ApiError ? err.message : 'Failed to rename file');
+    } finally {
+      setIsRenamingFile(false);
+    }
+  };
+
+  const handleViewFile = async (file: FileEntry) => {
+    if (!accessToken || !id) return;
+    // Opened synchronously so the browser still ties it to the click and
+    // doesn't treat it as an unsolicited popup once the fetch resolves.
+    const newTab = window.open('', '_blank');
+    try {
+      const objectUrl = await viewFile(accessToken, id, file.id);
+      if (newTab) newTab.location.href = objectUrl;
+    } catch {
+      newTab?.close();
+    }
+  };
+
+  const openMoveDialog = async (file: FileEntry) => {
+    setMoveTarget(file);
+    setMoveError(null);
+    setMoveFolders([]);
+    if (!accessToken || !id) return;
+    try {
+      setMoveFolders(await listAllFolders(accessToken, id));
+    } catch {
+      // Picker just falls back to "Root only" if this fails.
+    }
+  };
+
+  const handleMoveFile = async (folderId: string | undefined) => {
+    if (!accessToken || !id || !moveTarget) return;
+    setIsMoving(true);
+    setMoveError(null);
+    try {
+      await moveFile(accessToken, id, moveTarget.id, folderId);
+      // The file leaves whatever folder is currently open, regardless of
+      // which folder it moved to.
+      setContents((prev) =>
+        prev ? { ...prev, files: prev.files.filter((f) => f.id !== moveTarget.id) } : prev,
+      );
+      setMoveTarget(null);
+    } catch (err) {
+      setMoveError(err instanceof ApiError ? err.message : 'Failed to move file');
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
+  // Adjacency list -> indented list, root folders first then their children
+  // depth-first — same shape the breadcrumb/tree already assumes elsewhere.
+  const buildFolderOptions = (folders: Folder[]) => {
+    const byParent = new Map<string | null, Folder[]>();
+    for (const folder of folders) {
+      const key = folder.parentId;
+      byParent.set(key, [...(byParent.get(key) ?? []), folder]);
+    }
+    const options: { id: string; name: string; depth: number }[] = [];
+    const walk = (parentId: string | null, depth: number) => {
+      for (const folder of byParent.get(parentId) ?? []) {
+        options.push({ id: folder.id, name: folder.name, depth });
+        walk(folder.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return options;
+  };
+
   const openDeleteDialog = async (folder: Folder) => {
     setDeleteTarget(folder);
     setDeleteSummary(null);
@@ -182,6 +288,25 @@ export const DataRoomDetailPage = () => {
       setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete folder');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmDeleteFile = async () => {
+    if (!accessToken || !id || !fileDeleteTarget) return;
+    setIsDeletingFile(true);
+    setFileDeleteError(null);
+    try {
+      await deleteFile(accessToken, id, fileDeleteTarget.id);
+      setContents((prev) =>
+        prev
+          ? { ...prev, files: prev.files.filter((f) => f.id !== fileDeleteTarget.id) }
+          : prev,
+      );
+      setFileDeleteTarget(null);
+    } catch (err) {
+      setFileDeleteError(err instanceof ApiError ? err.message : 'Failed to delete file');
+    } finally {
+      setIsDeletingFile(false);
     }
   };
 
@@ -430,7 +555,7 @@ export const DataRoomDetailPage = () => {
             {contents?.files.map((file) => (
               <div
                 key={file.id}
-                className="flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
+                className="group flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
               >
                 <FileText className="size-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate text-row-primary text-foreground">
@@ -439,6 +564,43 @@ export const DataRoomDetailPage = () => {
                 <span className="shrink-0 text-row-secondary tabular-nums text-muted-foreground">
                   {formatBytes(file.sizeBytes)}
                 </span>
+                <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => handleViewFile(file)}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="View"
+                  >
+                    <Eye className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openMoveDialog(file)}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Move"
+                  >
+                    <FolderInput className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openFileRename(file)}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Rename"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFileDeleteTarget(file);
+                      setFileDeleteError(null);
+                    }}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Delete"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -485,6 +647,71 @@ export const DataRoomDetailPage = () => {
         </DialogContent>
       </Dialog>
 
+      {/* File rename dialog */}
+      <Dialog
+        open={!!fileRenameTarget}
+        onOpenChange={(open) => !open && setFileRenameTarget(null)}
+      >
+        <DialogContent>
+          <form onSubmit={handleFileRename}>
+            <DialogHeader>
+              <DialogTitle>Rename file</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <Input
+                autoFocus
+                required
+                value={fileRenameValue}
+                onChange={(event) => setFileRenameValue(event.target.value)}
+              />
+              {fileRenameError ? (
+                <p className="mt-2 text-sm text-destructive">{fileRenameError}</p>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={isRenamingFile}>
+                {isRenamingFile ? 'Saving…' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move dialog */}
+      <Dialog open={!!moveTarget} onOpenChange={(open) => !open && setMoveTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move &ldquo;{moveTarget?.name}&rdquo;</DialogTitle>
+            <DialogDescription>Choose a destination folder.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-64 overflow-y-auto rounded-md border border-border">
+            <button
+              type="button"
+              disabled={isMoving || moveTarget?.folderId === null}
+              onClick={() => handleMoveFile(undefined)}
+              className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+            >
+              <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+              Root
+            </button>
+            {buildFolderOptions(moveFolders).map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                disabled={isMoving || moveTarget?.folderId === option.id}
+                onClick={() => handleMoveFile(option.id)}
+                style={{ paddingLeft: `${12 + option.depth * 16}px` }}
+                className="flex w-full items-center gap-2 border-b border-border py-2 pr-3 text-left text-row-secondary text-foreground last:border-b-0 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+              >
+                <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                {option.name}
+              </button>
+            ))}
+          </div>
+          {moveError ? <p className="text-sm text-destructive">{moveError}</p> : null}
+        </DialogContent>
+      </Dialog>
+
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
@@ -508,6 +735,33 @@ export const DataRoomDetailPage = () => {
               className={buttonVariants({ variant: 'destructive' })}
             >
               {isDeleting ? 'Deleting…' : 'Delete permanently'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* File delete confirmation */}
+      <AlertDialog
+        open={!!fileDeleteTarget}
+        onOpenChange={(open) => !open && setFileDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete &ldquo;{fileDeleteTarget?.name}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          {fileDeleteError ? <p className="text-sm text-destructive">{fileDeleteError}</p> : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeletingFile}
+              onClick={(event) => {
+                event.preventDefault();
+                handleConfirmDeleteFile();
+              }}
+              className={buttonVariants({ variant: 'destructive' })}
+            >
+              {isDeletingFile ? 'Deleting…' : 'Delete permanently'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

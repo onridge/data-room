@@ -32,6 +32,16 @@ export class FoldersService {
     return folder;
   }
 
+  // Flat list for the "move to" picker — the frontend builds the indented
+  // tree itself from parentId, same as it already does for the breadcrumb.
+  async findAll(ownerId: string, dataRoomId: string) {
+    await this.assertDataRoomOwnership(ownerId, dataRoomId);
+    return this.prisma.folder.findMany({
+      where: { dataRoomId },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   async create(ownerId: string, dataRoomId: string, dto: CreateFolderDto) {
     await this.assertDataRoomOwnership(ownerId, dataRoomId);
     if (dto.parentId) {

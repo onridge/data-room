@@ -1,7 +1,26 @@
-import { Body, Controller, Param, Post, Query, Req, UsePipes, ValidationPipe } from '@nestjs/common';
-import type { Request } from 'express';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 import type { HandleUploadBody } from '@vercel/blob/client';
 import { FilesService } from './files.service';
+import { UpdateFileDto } from './dto/update-file.dto';
+import { MoveFileDto } from './dto/move-file.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { RequestUser } from '../common/decorators/current-user.decorator';
 
 @Controller('data-rooms/:dataRoomId/files')
 export class FilesController {
@@ -21,5 +40,48 @@ export class FilesController {
     @Query('folderId') folderId?: string,
   ) {
     return this.filesService.handleUploadRequest(request, body, dataRoomId, folderId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':fileId/content')
+  content(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Param('fileId') fileId: string,
+    @Res() res: Response,
+  ) {
+    return this.filesService.streamContent(user.userId, dataRoomId, fileId, res);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':fileId')
+  rename(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Param('fileId') fileId: string,
+    @Body() dto: UpdateFileDto,
+  ) {
+    return this.filesService.rename(user.userId, dataRoomId, fileId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':fileId/move')
+  move(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Param('fileId') fileId: string,
+    @Body() dto: MoveFileDto,
+  ) {
+    return this.filesService.move(user.userId, dataRoomId, fileId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':fileId')
+  remove(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Param('fileId') fileId: string,
+  ) {
+    return this.filesService.remove(user.userId, dataRoomId, fileId);
   }
 }
