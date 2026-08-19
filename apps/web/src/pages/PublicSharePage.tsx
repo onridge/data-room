@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { Eye, FileText, Folder as FolderIcon, Lock, User } from 'lucide-react';
 import { getPublicContents, getPublicShareInfo, viewPublicFile } from '../lib/public';
 import type { PublicShareInfo } from '../lib/public';
-import type { FolderContents } from '../lib/folders';
+import type { PublicContents } from '../lib/public';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { PdfViewerDialog } from '../components/PdfViewerDialog';
@@ -29,7 +29,7 @@ export const PublicSharePage = () => {
   const { token } = useParams<{ token: string }>();
 
   const [shareInfo, setShareInfo] = useState<PublicShareInfo | null>(null);
-  const [contents, setContents] = useState<FolderContents | null>(null);
+  const [contents, setContents] = useState<PublicContents | null>(null);
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);

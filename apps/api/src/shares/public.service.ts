@@ -60,13 +60,19 @@ export class PublicService {
       }
     }
 
+    // Deliberately narrow: this response goes to anonymous callers, so it
+    // returns only what the public view renders. The full rows would also
+    // hand out storageKey (the blob URL) and the internal user ids behind
+    // uploadedById / createdById.
     const [folders, files] = await Promise.all([
       this.prisma.folder.findMany({
         where: { dataRoomId, parentId: targetFolderId ?? null },
+        select: { id: true, name: true },
         orderBy: { name: 'asc' },
       }),
       this.prisma.file.findMany({
         where: { dataRoomId, folderId: targetFolderId ?? null, status: FileStatus.READY },
+        select: { id: true, name: true, sizeBytes: true },
         orderBy: { name: 'asc' },
       }),
     ]);

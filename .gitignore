@@ -1,9 +1,11 @@
 node_modules/
 dist/
 build/
-.env
-.env.local
-.env.*.local
+# Ignore every .env variant, then allow the committed templates back in —
+# safer than listing suffixes, which missed .env.production and friends.
+.env*
+!.env.example
+!.env*.example
 *.log
 .DS_Store
 
