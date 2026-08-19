@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { FileText, Folder as FolderIcon, Pencil, Trash2 } from 'lucide-react';
+import {
+  FileText,
+  Folder as FolderIcon,
+  Pencil,
+  Trash2,
+  Upload as UploadIcon,
+  X,
+} from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import { getDataRoom } from '../lib/data-rooms';
 import type { DataRoom } from '../lib/data-rooms';
@@ -14,8 +21,11 @@ import {
   renameFolder,
 } from '../lib/folders';
 import type { BreadcrumbEntry, Folder, FolderContents, SubtreeSummary } from '../lib/folders';
+import { uploadFile } from '../lib/files';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
+import { UploadPanel } from '../components/UploadPanel';
+import type { UploadItem } from '../components/UploadPanel';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -37,6 +47,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+
+const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 
 export const DataRoomDetailPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -64,6 +76,11 @@ export const DataRoomDetailPage = () => {
   const [deleteSummary, setDeleteSummary] = useState<SubtreeSummary | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!accessToken || !id) return;
@@ -168,6 +185,83 @@ export const DataRoomDetailPage = () => {
     }
   };
 
+  const uploadOne = async (item: UploadItem) => {
+    if (!accessToken || !id) return;
+    try {
+      await uploadFile({
+        file: item.file,
+        dataRoomId: id,
+        folderId: currentFolderId,
+        token: accessToken,
+        onProgress: (percentage) => {
+          setUploads((prev) =>
+            prev.map((u) => (u.id === item.id ? { ...u, progress: percentage } : u)),
+          );
+        },
+      });
+      setUploads((prev) =>
+        prev.map((u) => (u.id === item.id ? { ...u, status: 'done', progress: 100 } : u)),
+      );
+      load();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Upload failed';
+      setUploads((prev) =>
+        prev.map((u) => (u.id === item.id ? { ...u, status: 'error', error: message } : u)),
+      );
+    }
+  };
+
+  const startUploads = (files: FileList | File[]) => {
+    const rejections: string[] = [];
+    const accepted: File[] = [];
+
+    for (const file of Array.from(files)) {
+      if (file.type !== 'application/pdf') {
+        rejections.push(`"${file.name}" — only PDF files are supported`);
+        continue;
+      }
+      if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+        rejections.push(
+          `"${file.name}" — exceeds the ${formatBytes(MAX_UPLOAD_SIZE_BYTES)} upload limit`,
+        );
+        continue;
+      }
+      accepted.push(file);
+    }
+
+    setUploadValidationError(rejections.length > 0 ? rejections.join('; ') : null);
+
+    const items: UploadItem[] = accepted.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      status: 'uploading',
+      progress: 0,
+    }));
+    if (items.length === 0) return;
+    setUploads((prev) => [...prev, ...items]);
+    items.forEach((item) => uploadOne(item));
+  };
+
+  const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files?.length) startUploads(event.target.files);
+    event.target.value = '';
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    if (event.dataTransfer.files.length) startUploads(event.dataTransfer.files);
+  };
+
+  const retryUpload = (uploadId: string) => {
+    const item = uploads.find((u) => u.id === uploadId);
+    if (!item) return;
+    setUploads((prev) =>
+      prev.map((u) => (u.id === uploadId ? { ...u, status: 'uploading', progress: 0 } : u)),
+    );
+    uploadOne(item);
+  };
+
   return (
     <div className="p-8">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -200,95 +294,150 @@ export const DataRoomDetailPage = () => {
         <h1 className="text-page-title font-semibold text-foreground">
           {breadcrumb.at(-1)?.name ?? dataRoom?.name ?? 'Loading…'}
         </h1>
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">New Folder</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <form onSubmit={handleCreateFolder}>
-              <DialogHeader>
-                <DialogTitle>New Folder</DialogTitle>
-                <DialogDescription>Give the folder a name.</DialogDescription>
-              </DialogHeader>
-              <div className="py-4">
-                <Input
-                  autoFocus
-                  required
-                  value={newFolderName}
-                  onChange={(event) => setNewFolderName(event.target.value)}
-                  placeholder="Q3 2024"
-                />
-                {createError ? (
-                  <p className="mt-2 text-sm text-destructive">{createError}</p>
-                ) : null}
-              </div>
-              <DialogFooter>
-                <Button type="submit" disabled={isCreating}>
-                  {isCreating ? 'Creating…' : 'Create'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="application/pdf"
+            className="hidden"
+            onChange={handleFileInputChange}
+          />
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+            <UploadIcon className="size-3.5" />
+            Upload
+          </Button>
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">New Folder</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <form onSubmit={handleCreateFolder}>
+                <DialogHeader>
+                  <DialogTitle>New Folder</DialogTitle>
+                  <DialogDescription>Give the folder a name.</DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                  <Input
+                    autoFocus
+                    required
+                    value={newFolderName}
+                    onChange={(event) => setNewFolderName(event.target.value)}
+                    placeholder="Q3 2024"
+                  />
+                  {createError ? (
+                    <p className="mt-2 text-sm text-destructive">{createError}</p>
+                  ) : null}
+                </div>
+                <DialogFooter>
+                  <Button type="submit" disabled={isCreating}>
+                    {isCreating ? 'Creating…' : 'Create'}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
-      {isLoading ? (
-        <p className="mt-8 text-sm text-muted-foreground">Loading…</p>
-      ) : loadError ? (
-        <p className="mt-8 text-sm text-destructive">{loadError}</p>
-      ) : contents && contents.folders.length === 0 && contents.files.length === 0 ? (
-        <div className="mt-8 rounded-lg border border-dashed border-input p-8 text-center">
-          <p className="text-sm font-medium text-foreground">Folder is empty</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create a subfolder to start organizing documents.
-          </p>
+      {uploadValidationError ? (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <span className="flex-1">{uploadValidationError}</span>
+          <button
+            type="button"
+            onClick={() => setUploadValidationError(null)}
+            className="shrink-0 text-destructive/70 hover:text-destructive"
+          >
+            <X className="size-4" />
+          </button>
         </div>
-      ) : (
-        <div className="mt-6 overflow-hidden rounded-lg border border-border">
-          {contents?.folders.map((folder) => (
-            <div
-              key={folder.id}
-              className="group flex h-(--dr-table-row-h) items-center justify-between border-b border-border px-3 last:border-b-0 hover:bg-muted/60"
-            >
-              <button
-                type="button"
-                onClick={() => navigateToFolder(folder.id)}
-                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+      ) : null}
+
+      <div
+        className="relative"
+        onDragOver={(event) => {
+          event.preventDefault();
+          setIsDragOver(true);
+        }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={handleDrop}
+      >
+        {isLoading ? (
+          <p className="mt-8 text-sm text-muted-foreground">Loading…</p>
+        ) : loadError ? (
+          <p className="mt-8 text-sm text-destructive">{loadError}</p>
+        ) : contents && contents.folders.length === 0 && contents.files.length === 0 ? (
+          <div className="mt-8 rounded-lg border border-dashed border-input p-8 text-center">
+            <p className="text-sm font-medium text-foreground">Folder is empty</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Drag and drop PDFs here, or use the Upload button.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-6 overflow-hidden rounded-lg border border-border">
+            {contents?.folders.map((folder) => (
+              <div
+                key={folder.id}
+                className="group flex h-(--dr-table-row-h) items-center justify-between border-b border-border px-3 last:border-b-0 hover:bg-muted/60"
               >
-                <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate text-row-primary text-foreground">{folder.name}</span>
-              </button>
-              <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
                 <button
                   type="button"
-                  onClick={() => openRename(folder)}
-                  className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label="Rename"
+                  onClick={() => navigateToFolder(folder.id)}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                 >
-                  <Pencil className="size-3.5" />
+                  <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate text-row-primary text-foreground">{folder.name}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => openDeleteDialog(folder)}
-                  className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  aria-label="Delete"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => openRename(folder)}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Rename"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDeleteDialog(folder)}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Delete"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-          {contents?.files.map((file) => (
-            <div
-              key={file.id}
-              className="flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
-            >
-              <FileText className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate text-row-primary text-foreground">{file.name}</span>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+            {contents?.files.map((file) => (
+              <div
+                key={file.id}
+                className="flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
+              >
+                <FileText className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-row-primary text-foreground">
+                  {file.name}
+                </span>
+                <span className="shrink-0 text-row-secondary tabular-nums text-muted-foreground">
+                  {formatBytes(file.sizeBytes)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isDragOver ? (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-primary bg-primary/[0.06]">
+            <UploadIcon className="size-6 text-primary" />
+            <p className="text-sm font-semibold text-accent-foreground">Drop PDFs to upload</p>
+          </div>
+        ) : null}
+      </div>
+
+      <UploadPanel
+        items={uploads}
+        onDismiss={() => setUploads([])}
+        onRetry={retryUpload}
+      />
 
       {/* Rename dialog */}
       <Dialog open={!!renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)}>
