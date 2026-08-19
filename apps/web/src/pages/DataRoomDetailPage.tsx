@@ -31,6 +31,7 @@ import { formatBytes } from '../lib/format';
 import { UploadPanel } from '../components/UploadPanel';
 import type { UploadItem } from '../components/UploadPanel';
 import { ShareDialog } from '../components/ShareDialog';
+import { listShares } from '../lib/shares';
 import type { ShareResourceType } from '../lib/shares';
 import { PdfViewerDialog } from '../components/PdfViewerDialog';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -87,6 +88,7 @@ export const DataRoomDetailPage = () => {
   const [fileDeleteTarget, setFileDeleteTarget] = useState<FileEntry | null>(null);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
   const [fileDeleteError, setFileDeleteError] = useState<string | null>(null);
+  const [fileDeleteShareCount, setFileDeleteShareCount] = useState(0);
 
   const [fileRenameTarget, setFileRenameTarget] = useState<FileEntry | null>(null);
   const [fileRenameValue, setFileRenameValue] = useState('');
@@ -279,6 +281,19 @@ export const DataRoomDetailPage = () => {
       setDeleteSummary(summary);
     } catch {
       // Warning falls back to a generic message below if this fails.
+    }
+  };
+
+  const openFileDeleteDialog = async (file: FileEntry) => {
+    setFileDeleteTarget(file);
+    setFileDeleteError(null);
+    setFileDeleteShareCount(0);
+    if (!accessToken || !id) return;
+    try {
+      const shares = await listShares(accessToken, 'FILE', file.id);
+      setFileDeleteShareCount(shares.length);
+    } catch {
+      // Warning just doesn't show if this fails.
     }
   };
 
@@ -639,10 +654,7 @@ export const DataRoomDetailPage = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setFileDeleteTarget(file);
-                      setFileDeleteError(null);
-                    }}
+                    onClick={() => openFileDeleteDialog(file)}
                     className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Delete"
                   >
@@ -771,6 +783,12 @@ export const DataRoomDetailPage = () => {
                 : 'Calculating what will be deleted…'}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteSummary && deleteSummary.activeShareCount > 0 ? (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {deleteSummary.activeShareCount} active share link
+              {deleteSummary.activeShareCount === 1 ? '' : 's'} will stop working.
+            </p>
+          ) : null}
           {deleteError ? <p className="text-sm text-destructive">{deleteError}</p> : null}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -798,6 +816,12 @@ export const DataRoomDetailPage = () => {
             <AlertDialogTitle>Delete &ldquo;{fileDeleteTarget?.name}&rdquo;?</AlertDialogTitle>
             <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
+          {fileDeleteShareCount > 0 ? (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {fileDeleteShareCount} active share link{fileDeleteShareCount === 1 ? '' : 's'} will
+              stop working.
+            </p>
+          ) : null}
           {fileDeleteError ? <p className="text-sm text-destructive">{fileDeleteError}</p> : null}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
