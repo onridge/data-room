@@ -36,6 +36,11 @@ export class DataRoomsController {
     return this.dataRoomsService.getContents(user.userId, id, query.folderId);
   }
 
+  @Get(':id/summary')
+  getSummary(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.dataRoomsService.getSummary(user.userId, id);
+  }
+
   @Patch(':id')
   rename(
     @CurrentUser() user: RequestUser,

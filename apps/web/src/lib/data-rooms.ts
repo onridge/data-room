@@ -39,3 +39,17 @@ export const renameDataRoom = async (token: string, id: string, name: string) =>
 export const deleteDataRoom = async (token: string, id: string) => {
   await api.delete(`/data-rooms/${id}`, { headers: authHeader(token) });
 };
+
+export interface DataRoomSummary {
+  folderCount: number;
+  fileCount: number;
+  totalSizeBytes: string;
+  activeShareCount: number;
+}
+
+export const getDataRoomSummary = async (token: string, id: string) => {
+  const { data } = await api.get<DataRoomSummary>(`/data-rooms/${id}/summary`, {
+    headers: authHeader(token),
+  });
+  return data;
+};

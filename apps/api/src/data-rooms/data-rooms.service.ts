@@ -60,6 +60,37 @@ export class DataRoomsService {
     await this.prisma.dataRoom.delete({ where: { id } });
   }
 
+  // Powers the delete-confirmation warning — every folder/file already
+  // stores its own dataRoomId regardless of nesting depth, so this is a
+  // flat query rather than the recursive CTE folder deletion needs.
+  async getSummary(ownerId: string, id: string) {
+    await this.findOneOwned(ownerId, id);
+
+    const [folders, files] = await Promise.all([
+      this.prisma.folder.findMany({ where: { dataRoomId: id }, select: { id: true } }),
+      this.prisma.file.findMany({ where: { dataRoomId: id }, select: { id: true, sizeBytes: true } }),
+    ]);
+    const totalSizeBytes = files.reduce((sum, file) => sum + file.sizeBytes, 0n);
+
+    const activeShareCount = await this.prisma.share.count({
+      where: {
+        revokedAt: null,
+        OR: [
+          { resourceType: ShareResourceType.DATA_ROOM, resourceId: id },
+          { resourceType: ShareResourceType.FOLDER, resourceId: { in: folders.map((f) => f.id) } },
+          { resourceType: ShareResourceType.FILE, resourceId: { in: files.map((f) => f.id) } },
+        ],
+      },
+    });
+
+    return {
+      folderCount: folders.length,
+      fileCount: files.length,
+      totalSizeBytes: totalSizeBytes.toString(),
+      activeShareCount,
+    };
+  }
+
   // folderId omitted/undefined = the data room's own root, not "any folder".
   // Access is checked against the specific node being viewed, not always
   // the data room — a share on just one folder shouldn't require a
