@@ -5,9 +5,10 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { DataRoomsModule } from './data-rooms/data-rooms.module';
 import { FoldersModule } from './folders/folders.module';
+import { FilesModule } from './files/files.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, DataRoomsModule, FoldersModule],
+  imports: [PrismaModule, AuthModule, DataRoomsModule, FoldersModule, FilesModule],
   controllers: [AppController],
   providers: [AppService],
 })
