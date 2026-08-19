@@ -1,5 +1,6 @@
 import { upload } from '@vercel/blob/client';
 import { api, authHeader } from './api';
+import type { FileEntry } from './folders';
 
 export interface UploadFileParams {
   file: File;
@@ -24,4 +25,18 @@ export const deleteFile = async (token: string, dataRoomId: string, fileId: stri
   await api.delete(`/data-rooms/${dataRoomId}/files/${fileId}`, {
     headers: authHeader(token),
   });
+};
+
+export const renameFile = async (
+  token: string,
+  dataRoomId: string,
+  fileId: string,
+  name: string,
+) => {
+  const { data } = await api.patch<FileEntry>(
+    `/data-rooms/${dataRoomId}/files/${fileId}`,
+    { name },
+    { headers: authHeader(token) },
+  );
+  return data;
 };

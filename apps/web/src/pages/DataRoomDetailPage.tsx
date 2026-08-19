@@ -21,7 +21,7 @@ import {
   renameFolder,
 } from '../lib/folders';
 import type { BreadcrumbEntry, FileEntry, Folder, FolderContents, SubtreeSummary } from '../lib/folders';
-import { deleteFile, uploadFile } from '../lib/files';
+import { deleteFile, renameFile, uploadFile } from '../lib/files';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { UploadPanel } from '../components/UploadPanel';
@@ -80,6 +80,11 @@ export const DataRoomDetailPage = () => {
   const [fileDeleteTarget, setFileDeleteTarget] = useState<FileEntry | null>(null);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
   const [fileDeleteError, setFileDeleteError] = useState<string | null>(null);
+
+  const [fileRenameTarget, setFileRenameTarget] = useState<FileEntry | null>(null);
+  const [fileRenameValue, setFileRenameValue] = useState('');
+  const [isRenamingFile, setIsRenamingFile] = useState(false);
+  const [fileRenameError, setFileRenameError] = useState<string | null>(null);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
@@ -154,6 +159,32 @@ export const DataRoomDetailPage = () => {
       setRenameError(err instanceof ApiError ? err.message : 'Failed to rename folder');
     } finally {
       setIsRenaming(false);
+    }
+  };
+
+  const openFileRename = (file: FileEntry) => {
+    setFileRenameTarget(file);
+    setFileRenameValue(file.name);
+    setFileRenameError(null);
+  };
+
+  const handleFileRename = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!accessToken || !id || !fileRenameTarget) return;
+    setFileRenameError(null);
+    setIsRenamingFile(true);
+    try {
+      const updated = await renameFile(accessToken, id, fileRenameTarget.id, fileRenameValue);
+      setContents((prev) =>
+        prev
+          ? { ...prev, files: prev.files.map((f) => (f.id === updated.id ? updated : f)) }
+          : prev,
+      );
+      setFileRenameTarget(null);
+    } catch (err) {
+      setFileRenameError(err instanceof ApiError ? err.message : 'Failed to rename file');
+    } finally {
+      setIsRenamingFile(false);
     }
   };
 
@@ -465,6 +496,14 @@ export const DataRoomDetailPage = () => {
                 <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
                   <button
                     type="button"
+                    onClick={() => openFileRename(file)}
+                    className="grid size-7 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Rename"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       setFileDeleteTarget(file);
                       setFileDeleteError(null);
@@ -515,6 +554,36 @@ export const DataRoomDetailPage = () => {
             <DialogFooter>
               <Button type="submit" disabled={isRenaming}>
                 {isRenaming ? 'Saving…' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* File rename dialog */}
+      <Dialog
+        open={!!fileRenameTarget}
+        onOpenChange={(open) => !open && setFileRenameTarget(null)}
+      >
+        <DialogContent>
+          <form onSubmit={handleFileRename}>
+            <DialogHeader>
+              <DialogTitle>Rename file</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <Input
+                autoFocus
+                required
+                value={fileRenameValue}
+                onChange={(event) => setFileRenameValue(event.target.value)}
+              />
+              {fileRenameError ? (
+                <p className="mt-2 text-sm text-destructive">{fileRenameError}</p>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={isRenamingFile}>
+                {isRenamingFile ? 'Saving…' : 'Save'}
               </Button>
             </DialogFooter>
           </form>

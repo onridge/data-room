@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -13,6 +14,7 @@ import {
 import type { Request } from 'express';
 import type { HandleUploadBody } from '@vercel/blob/client';
 import { FilesService } from './files.service';
+import { UpdateFileDto } from './dto/update-file.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { RequestUser } from '../common/decorators/current-user.decorator';
@@ -35,6 +37,17 @@ export class FilesController {
     @Query('folderId') folderId?: string,
   ) {
     return this.filesService.handleUploadRequest(request, body, dataRoomId, folderId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':fileId')
+  rename(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Param('fileId') fileId: string,
+    @Body() dto: UpdateFileDto,
+  ) {
+    return this.filesService.rename(user.userId, dataRoomId, fileId, dto);
   }
 
   @UseGuards(JwtAuthGuard)

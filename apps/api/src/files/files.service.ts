@@ -1,16 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import { del, head } from '@vercel/blob';
 import { handleUpload } from '@vercel/blob/client';
 import type { HandleUploadBody } from '@vercel/blob/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { getJwtSecret } from '../auth/jwt-secret.util';
+import { UpdateFileDto } from './dto/update-file.dto';
 
 interface UploadTokenPayload {
   fileId: string;
@@ -82,6 +85,21 @@ export class FilesService {
       throw new NotFoundException('File not found');
     }
     return file;
+  }
+
+  async rename(ownerId: string, dataRoomId: string, fileId: string, dto: UpdateFileDto) {
+    await this.getOwnedFile(ownerId, dataRoomId, fileId);
+    try {
+      return await this.prisma.file.update({
+        where: { id: fileId },
+        data: { name: dto.name },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('A file with this name already exists here');
+      }
+      throw error;
+    }
   }
 
   async remove(ownerId: string, dataRoomId: string, fileId: string) {
