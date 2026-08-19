@@ -595,7 +595,7 @@ export const DataRoomDetailPage = () => {
                 key={file.id}
                 className="group flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
               >
-                <FileText className="size-4 shrink-0 text-muted-foreground" />
+                <FileText className="size-4 shrink-0 text-red-500 dark:text-red-400" />
                 <span className="min-w-0 flex-1 truncate text-row-primary text-foreground">
                   {file.name}
                 </span>

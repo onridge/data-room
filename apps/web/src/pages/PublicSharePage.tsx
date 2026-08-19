@@ -83,7 +83,7 @@ export const PublicSharePage = () => {
     return (
       <div className="p-8">
         <div className="flex items-center gap-2.5">
-          <FileText className="size-5 shrink-0 text-muted-foreground" />
+          <FileText className="size-5 shrink-0 text-red-500 dark:text-red-400" />
           <h1 className="text-page-title font-semibold text-foreground">{shareInfo.name}</h1>
         </div>
         <button
@@ -158,7 +158,7 @@ export const PublicSharePage = () => {
               key={file.id}
               className="flex h-(--dr-table-row-h) items-center gap-2.5 border-b border-border px-3 last:border-b-0"
             >
-              <FileText className="size-4 shrink-0 text-muted-foreground" />
+              <FileText className="size-4 shrink-0 text-red-500 dark:text-red-400" />
               <span className="min-w-0 flex-1 truncate text-row-primary text-foreground">
                 {file.name}
               </span>
