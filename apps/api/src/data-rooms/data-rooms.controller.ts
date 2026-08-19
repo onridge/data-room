@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { DataRoomsService } from './data-rooms.service';
 import { CreateDataRoomDto } from './dto/create-data-room.dto';
 import { UpdateDataRoomDto } from './dto/update-data-room.dto';
+import { ListContentsQueryDto } from './dto/list-contents-query.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { RequestUser } from '../common/decorators/current-user.decorator';
@@ -24,6 +25,15 @@ export class DataRoomsController {
   @Get(':id')
   findOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.dataRoomsService.findOneOwned(user.userId, id);
+  }
+
+  @Get(':id/contents')
+  getContents(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Query() query: ListContentsQueryDto,
+  ) {
+    return this.dataRoomsService.getContents(user.userId, id, query.folderId);
   }
 
   @Patch(':id')
