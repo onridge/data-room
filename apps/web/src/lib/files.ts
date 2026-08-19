@@ -21,6 +21,25 @@ export const uploadFile = ({ file, dataRoomId, folderId, token, onProgress }: Up
   });
 };
 
+// Carries the ancestor folder chain because search spans the whole data
+// room — without it a result is just a name with no indication of where it
+// lives, and two files can legitimately share a name in different folders.
+export interface FileSearchResult {
+  id: string;
+  name: string;
+  sizeBytes: string;
+  folderId: string | null;
+  path: { id: string; name: string }[];
+}
+
+export const searchFiles = async (token: string, dataRoomId: string, query: string) => {
+  const { data } = await api.get<FileSearchResult[]>(`/data-rooms/${dataRoomId}/files/search`, {
+    headers: authHeader(token),
+    params: { q: query },
+  });
+  return data;
+};
+
 export const deleteFile = async (token: string, dataRoomId: string, fileId: string) => {
   await api.delete(`/data-rooms/${dataRoomId}/files/${fileId}`, {
     headers: authHeader(token),
