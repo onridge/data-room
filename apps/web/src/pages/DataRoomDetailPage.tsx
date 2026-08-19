@@ -32,6 +32,7 @@ import { UploadPanel } from '../components/UploadPanel';
 import type { UploadItem } from '../components/UploadPanel';
 import { ShareDialog } from '../components/ShareDialog';
 import type { ShareResourceType } from '../lib/shares';
+import { PdfViewerDialog } from '../components/PdfViewerDialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -102,6 +103,8 @@ export const DataRoomDetailPage = () => {
     resourceId: string;
     name: string;
   } | null>(null);
+
+  const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(null);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
@@ -207,14 +210,12 @@ export const DataRoomDetailPage = () => {
 
   const handleViewFile = async (file: FileEntry) => {
     if (!accessToken || !id) return;
-    // Opened synchronously so the browser still ties it to the click and
-    // doesn't treat it as an unsolicited popup once the fetch resolves.
-    const newTab = window.open('', '_blank');
     try {
       const objectUrl = await viewFile(accessToken, id, file.id);
-      if (newTab) newTab.location.href = objectUrl;
+      setPdfViewerTarget({ url: objectUrl, name: file.name });
     } catch {
-      newTab?.close();
+      // The eye button just does nothing on failure — no dedicated error UI
+      // for this yet.
     }
   };
 
@@ -823,6 +824,13 @@ export const DataRoomDetailPage = () => {
           resourceName={shareTarget.name}
         />
       ) : null}
+
+      <PdfViewerDialog
+        open={!!pdfViewerTarget}
+        onOpenChange={(open) => !open && setPdfViewerTarget(null)}
+        fileUrl={pdfViewerTarget?.url ?? null}
+        fileName={pdfViewerTarget?.name ?? ''}
+      />
     </div>
   );
 };

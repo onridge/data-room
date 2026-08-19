@@ -6,6 +6,7 @@ import type { PublicShareInfo } from '../lib/public';
 import type { FolderContents } from '../lib/folders';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
+import { PdfViewerDialog } from '../components/PdfViewerDialog';
 
 interface BreadcrumbEntry {
   id: string;
@@ -24,6 +25,7 @@ export const PublicSharePage = () => {
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(null);
 
   const currentFolderId = breadcrumb.at(-1)?.id;
 
@@ -56,14 +58,14 @@ export const PublicSharePage = () => {
     setBreadcrumb((prev) => prev.slice(0, index + 1));
   };
 
-  const handleViewFile = async (fileId: string) => {
+  const handleViewFile = async (fileId: string, fileName: string) => {
     if (!token) return;
-    const newTab = window.open('', '_blank');
     try {
       const objectUrl = await viewPublicFile(token, fileId);
-      if (newTab) newTab.location.href = objectUrl;
+      setPdfViewerTarget({ url: objectUrl, name: fileName });
     } catch {
-      newTab?.close();
+      // The eye button just does nothing on failure — no dedicated error UI
+      // for this yet.
     }
   };
 
@@ -86,12 +88,18 @@ export const PublicSharePage = () => {
         </div>
         <button
           type="button"
-          onClick={() => handleViewFile(shareInfo.resourceId)}
-          className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:brightness-90"
+          onClick={() => handleViewFile(shareInfo.resourceId, shareInfo.name)}
+          className="mt-4 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:brightness-90"
         >
           <Eye className="size-3.5" />
           View PDF
         </button>
+        <PdfViewerDialog
+          open={!!pdfViewerTarget}
+          onOpenChange={(open) => !open && setPdfViewerTarget(null)}
+          fileUrl={pdfViewerTarget?.url ?? null}
+          fileName={pdfViewerTarget?.name ?? ''}
+        />
       </div>
     );
   }
@@ -159,7 +167,7 @@ export const PublicSharePage = () => {
               </span>
               <button
                 type="button"
-                onClick={() => handleViewFile(file.id)}
+                onClick={() => handleViewFile(file.id, file.name)}
                 className="grid size-7 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                 aria-label="View"
               >
@@ -169,6 +177,13 @@ export const PublicSharePage = () => {
           ))}
         </div>
       )}
+
+      <PdfViewerDialog
+        open={!!pdfViewerTarget}
+        onOpenChange={(open) => !open && setPdfViewerTarget(null)}
+        fileUrl={pdfViewerTarget?.url ?? null}
+        fileName={pdfViewerTarget?.name ?? ''}
+      />
     </div>
   );
 };
