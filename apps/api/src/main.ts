@@ -26,6 +26,17 @@ const getWebOrigin = (): string => {
 
 const bootstrap = async () => {
   const app = await NestFactory.create(AppModule);
+
+  // Railway terminates TLS and proxies to us, so the TCP peer is always its
+  // edge, never the caller. Without this the rate limiter keys every request
+  // on the same proxy address — and in practice that address varies per
+  // request, so each one looked like a brand new client and the auth limit
+  // never triggered in production even though it worked locally.
+  // Trusting exactly one hop makes req.ip the last entry the proxy appended
+  // to X-Forwarded-For, which a client cannot forge by sending its own
+  // header.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   app.enableCors({ origin: getWebOrigin() });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
