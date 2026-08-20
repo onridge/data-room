@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FileStatus, ShareResourceType } from '@prisma/client';
+import { ShareResourceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDataRoomDto } from './dto/create-data-room.dto';
 import { UpdateDataRoomDto } from './dto/update-data-room.dto';
@@ -68,9 +68,19 @@ export class DataRoomsService {
 
     const [folders, files] = await Promise.all([
       this.prisma.folder.findMany({ where: { dataRoomId: id }, select: { id: true } }),
-      this.prisma.file.findMany({ where: { dataRoomId: id }, select: { id: true, sizeBytes: true } }),
+      this.prisma.file.findMany({
+        where: { dataRoomId: id },
+        select: { id: true, currentVersion: { select: { sizeBytes: true } } },
+      }),
     ]);
-    const totalSizeBytes = files.reduce((sum, file) => sum + file.sizeBytes, 0n);
+    // Counts what deleting actually frees from the user's point of view —
+    // the current version of each document. Superseded versions still
+    // occupy blob storage, but reporting their total here would make the
+    // warning read as much larger than what the user can see.
+    const totalSizeBytes = files.reduce(
+      (sum, file) => sum + (file.currentVersion?.sizeBytes ?? 0n),
+      0n,
+    );
 
     const activeShareCount = await this.prisma.share.count({
       where: {
@@ -117,11 +127,21 @@ export class DataRoomsService {
         orderBy: { name: 'asc' },
       }),
       this.prisma.file.findMany({
-        where: { dataRoomId, folderId: folderId ?? null, status: FileStatus.READY },
+        where: { dataRoomId, folderId: folderId ?? null, currentVersionId: { not: null } },
+        include: { currentVersion: { select: { sizeBytes: true, versionNumber: true } } },
         orderBy: { name: 'asc' },
       }),
     ]);
 
-    return { folders, files };
+    // The client still sees a flat file with a size; versionNumber rides
+    // along so the listing can mark documents that have been superseded.
+    return {
+      folders,
+      files: files.map(({ currentVersion, ...file }) => ({
+        ...file,
+        sizeBytes: currentVersion?.sizeBytes ?? 0n,
+        versionNumber: currentVersion?.versionNumber ?? 1,
+      })),
+    };
   }
 }

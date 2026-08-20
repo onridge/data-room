@@ -48,6 +48,7 @@ model User {
   dataRooms     DataRoom[]
   folders       Folder[]
   files         File[]
+  fileVersions  FileVersion[]
   sharesCreated Share[]      @relation("ShareCreatedBy")
   shareGrants   ShareGrant[]
 
@@ -100,30 +101,62 @@ model Folder {
   @@map("folders")
 }
 
+// A File is the logical document — a name in a folder. Its bytes live in
+// FileVersion, so re-uploading under an existing name adds a version
+// instead of silently becoming "Report (1).pdf".
 model File {
-  id           String     @id @default(uuid())
-  name         String
-  sizeBytes    BigInt
-  mimeType     String
-  storageKey   String     @unique
-  dataRoomId   String
-  dataRoom     DataRoom   @relation(fields: [dataRoomId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  name        String
+  dataRoomId  String
+  dataRoom    DataRoom @relation(fields: [dataRoomId], references: [id], onDelete: Cascade)
   // null folderId = file lives at the data room root, alongside top-level folders.
-  folderId     String?
-  folder       Folder?    @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  uploadedById String
-  uploadedBy   User       @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
-  // Pending until the client confirms the presigned S3 upload finished;
-  // lets us hide half-uploaded files from listings.
-  status       FileStatus @default(PENDING)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  folderId    String?
+  folder      Folder?  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions FileVersion[] @relation("FileVersions")
+
+  // Denormalised pointer to the version that listings, downloads and shares
+  // resolve to. It could be derived as "highest versionNumber that is
+  // READY", but that turns every listing into a correlated subquery — and
+  // this also makes "current" an explicit decision, which is what a future
+  // restore-this-version action would flip.
+  // Stays null until the first upload is confirmed, which is what keeps a
+  // half-uploaded file out of listings.
+  currentVersionId String?      @unique
+  currentVersion   FileVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
   // Same NULL-vs-NULL caveat as Folder — see the partial unique index in
   // migration 20260819130000_root_level_unique_names for root-level files.
   @@unique([dataRoomId, folderId, name])
   @@index([dataRoomId, folderId])
   @@map("files")
+}
+
+model FileVersion {
+  id            String     @id @default(uuid())
+  fileId        String
+  file          File       @relation("FileVersions", fields: [fileId], references: [id], onDelete: Cascade)
+  // 1-based and per file, so the UI can say "v3" without a lookup.
+  versionNumber Int
+  sizeBytes     BigInt
+  mimeType      String
+  storageKey    String     @unique
+  uploadedById  String
+  uploadedBy    User       @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  // Pending until Vercel confirms the upload finished; a version that never
+  // completes is simply never promoted to current.
+  status        FileStatus @default(PENDING)
+  createdAt     DateTime   @default(now())
+
+  currentOf File? @relation("CurrentVersion")
+
+  @@unique([fileId, versionNumber])
+  @@index([fileId])
+  @@map("file_versions")
 }
 
 // Polymorphic target (resourceType + resourceId) instead of three nullable

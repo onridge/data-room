@@ -149,7 +149,10 @@ export class FoldersService {
       SELECT
         (SELECT COUNT(*)::int FROM subtree) - 1 AS "subfolderCount",
         (SELECT COUNT(*)::int FROM files WHERE "folderId" IN (SELECT id FROM subtree)) AS "fileCount",
-        (SELECT COALESCE(SUM("sizeBytes"), 0)::bigint FROM files WHERE "folderId" IN (SELECT id FROM subtree)) AS "totalSizeBytes",
+        (SELECT COALESCE(SUM(v."sizeBytes"), 0)::bigint
+           FROM files f
+           JOIN file_versions v ON v.id = f."currentVersionId"
+          WHERE f."folderId" IN (SELECT id FROM subtree)) AS "totalSizeBytes",
         (SELECT COUNT(*)::int FROM shares WHERE "revokedAt" IS NULL AND (
           ("resourceType" = 'FOLDER' AND "resourceId" IN (SELECT id FROM subtree))
           OR ("resourceType" = 'FILE' AND "resourceId" IN (SELECT id FROM files WHERE "folderId" IN (SELECT id FROM subtree)))

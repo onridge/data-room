@@ -10,14 +10,16 @@ export interface Folder {
   updatedAt: string;
 }
 
+// Flat by design: the API resolves the current version server-side, so a
+// listing entry describes the document as it stands. versionNumber is the
+// only trace of history here — the full list is fetched on demand.
 export interface FileEntry {
   id: string;
   name: string;
   sizeBytes: string;
-  mimeType: string;
   dataRoomId: string;
   folderId: string | null;
-  status: 'PENDING' | 'READY';
+  versionNumber: number;
   createdAt: string;
   updatedAt: string;
 }

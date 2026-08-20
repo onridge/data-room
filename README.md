@@ -6,10 +6,10 @@ Room is the top-level drive.
 
 **Live:**
 
-| | URL |
-|---|---|
-| Frontend | https://data-room-azure.vercel.app |
-| Backend | https://data-room-production-cda0.up.railway.app |
+|          | URL                                              |
+| -------- | ------------------------------------------------ |
+| Frontend | https://data-room-azure.vercel.app               |
+| Backend  | https://data-room-production-cda0.up.railway.app |
 
 ---
 
@@ -27,6 +27,10 @@ page navigation, rename with conflict detection, move between folders, delete.
 **Search** — find a file by name across an entire Data Room, not just the open folder. Each
 result shows the folder path it lives in, and clicking that path jumps straight there.
 
+**Versioning** — uploading a file whose name already exists in that folder adds a version
+instead of a renamed copy. Listings, search and share links always resolve to the current
+version; the owner can open the full history and view any earlier revision.
+
 **Sharing** — share a Data Room, a folder, or a single file. Two modes: a public link that
 anyone can open without an account, and a permissioned share granted to specific registered
 users. Access cascades: sharing a Data Room or folder shares everything nested inside it. The
@@ -36,12 +40,12 @@ owner can revoke either at any time.
 
 ## Tech stack
 
-| Layer | Choice |
-|---|---|
-| Frontend | React 19, TypeScript, Vite, Tailwind v4, shadcn/ui, react-pdf |
-| Backend | NestJS 11, Prisma 6, PostgreSQL |
-| File storage | Vercel Blob (private access) |
-| Hosting | Vercel (frontend), Railway (API + Postgres) |
+| Layer        | Choice                                                        |
+| ------------ | ------------------------------------------------------------- |
+| Frontend     | React 19, TypeScript, Vite, Tailwind v4, shadcn/ui, react-pdf |
+| Backend      | NestJS 11, Prisma 6, PostgreSQL                               |
+| File storage | Vercel Blob (private access)                                  |
+| Hosting      | Vercel (frontend), Railway (API + Postgres)                   |
 
 The repo is a monorepo of two independent packages — `apps/api` and `apps/web` — each with its
 own `package.json` and lockfile. There is no workspace tooling on purpose: the two deploy to
@@ -88,14 +92,14 @@ pnpm dev                     # http://localhost:5173
 The button is wired up on both pages, but it only works once the OAuth client is configured on
 Google's side — the code alone is not enough. In the Google Cloud console:
 
-1. **APIs & Services → Credentials → OAuth 2.0 Client ID** (type *Web application*). Copy the
+1. **APIs & Services → Credentials → OAuth 2.0 Client ID** (type _Web application_). Copy the
    client ID into `GOOGLE_CLIENT_ID` (API) and `VITE_GOOGLE_CLIENT_ID` (web) — they must match,
    since the API verifies that the token's audience is exactly this client.
 2. **Authorised JavaScript origins** must list every origin the app is served from, with no
    trailing slash and no path: `http://localhost:5173` for local work, plus the deployed
    frontend URL. Google refuses to render the button on an origin that is not listed.
-3. **OAuth consent screen → Audience.** While the app is in *Testing*, only accounts explicitly
-   added under *Test users* can sign in; everyone else is rejected. To let anyone with a Google
+3. **OAuth consent screen → Audience.** While the app is in _Testing_, only accounts explicitly
+   added under _Test users_ can sign in; everyone else is rejected. To let anyone with a Google
    account sign in, **Publish app**. For the `email`/`profile` scopes this app uses, publishing
    takes effect immediately and needs no Google review.
 
@@ -129,7 +133,7 @@ fails, with no pre-signed URL still floating around.
 
 **Adjacency list for the folder tree.** `Folder.parentId` is a self-relation. Moves are a single
 column update, and depth is unbounded. The cost lands on subtree reads, which is addressed with
-a recursive CTE — see *How it scales* below.
+a recursive CTE — see _How it scales_ below.
 
 **Polymorphic Share.** One `Share` row points at a Data Room, folder, or file via
 `resourceType` + `resourceId`, instead of three nullable foreign keys or three separate tables.
@@ -142,14 +146,15 @@ either ownership or a share, while every write endpoint stays strictly owner-onl
 are separate helpers in each service (`getOwned*` vs `getAccessible*`) so that "can write" is
 never accidentally satisfied by a share.
 
-**404 instead of 403.** Requesting something you do not have access to returns *not found*,
+**404 instead of 403.** Requesting something you do not have access to returns _not found_,
 whether it truly does not exist or simply is not yours. A 403 would confirm the resource exists,
 which leaks information across tenants.
 
-**Name conflicts, resolved differently by context.** Uploading a batch auto-renames on collision
-(`Report.pdf` → `Report (1).pdf`) because there is no sensible place to prompt mid-batch.
-Explicitly renaming a single file rejects with a 409 and a clear message, because the user is
-right there and should decide. Uniqueness is enforced in the database, not just in application
+**Name conflicts, resolved differently by context.** Uploading over an existing name adds a
+version to that document rather than creating `Report (1).pdf` beside it — in due diligence, the
+second upload of a file almost always _is_ a newer draft of the same document, and silently
+renaming it hides that. Explicitly renaming a single file still rejects with a 409 and a clear
+message, because there the user is right there and should decide. Uniqueness is enforced in the database, not just in application
 code — including a hand-written partial index for root-level items, since Postgres treats
 `NULL` parents as always distinct and the plain unique constraint would not catch duplicates
 there.
@@ -165,13 +170,15 @@ NestJS's CommonJS build. Documented inline in `schema.prisma` so nobody "helpful
 erDiagram
     User ||--o{ DataRoom : owns
     User ||--o{ Folder : created
-    User ||--o{ File : uploaded
+    User ||--o{ File : created
+    User ||--o{ FileVersion : uploaded
     User ||--o{ Share : created
     User ||--o{ ShareGrant : "granted to"
     DataRoom ||--o{ Folder : contains
     DataRoom ||--o{ File : contains
     Folder ||--o{ Folder : "nests (parentId)"
     Folder ||--o{ File : contains
+    File ||--o{ FileVersion : "has versions"
     Share ||--o{ ShareGrant : has
 
     User {
@@ -196,11 +203,18 @@ erDiagram
     File {
         string id PK
         string name
+        string dataRoomId FK
+        string folderId FK "null = data room root"
+        string createdById FK
+        string currentVersionId FK "null until first upload confirms"
+    }
+    FileVersion {
+        string id PK
+        string fileId FK
+        int versionNumber "1-based, per file"
         bigint sizeBytes
         string mimeType
         string storageKey UK "blob URL"
-        string dataRoomId FK
-        string folderId FK "null = data room root"
         string uploadedById FK
         enum status "PENDING | READY"
     }
@@ -289,7 +303,7 @@ LIMIT 50
 
 **Indexes would need to cover the sort, not just the filter.** The existing
 `(dataRoomId, folderId)` index answers the `WHERE` but leaves Postgres sorting the matches. It
-would become `(dataRoomId, folderId, name, id)` so that the index order *is* the output order
+would become `(dataRoomId, folderId, name, id)` so that the index order _is_ the output order
 and pagination is a range scan. Since listings only ever show `READY` files, a partial index
 with `WHERE status = 'READY'` keeps half-finished uploads out of the index entirely.
 
@@ -301,7 +315,7 @@ case-insensitive `ILIKE '%query%'` across the data room, capped at 50 rows. A le
 cannot use a B-tree index, so this is a sequential scan over the room's files — which is the
 right call at a few hundred or few thousand files, and buys the feature without a migration.
 At the scale above it becomes the bottleneck, and the fix is a `pg_trgm` GIN index on `name`,
-which *can* serve a leading wildcard. Beyond that — searching document contents rather than
+which _can_ serve a leading wildcard. Beyond that — searching document contents rather than
 file names — the answer stops being an index and becomes a separate full-text store fed by the
 upload pipeline.
 
@@ -362,12 +376,6 @@ unimplemented features.
 
 Called out explicitly, since the brief asks for a design without unimplemented features on show:
 
-- **File versioning** on name conflicts (optional extra credit) — a deliberate omission rather
-  than a missing feature. Conflicts are resolved instead by Drive-style auto-renaming on upload
-  (`Report.pdf` → `Report (1).pdf`) and by rejecting an explicit rename with a 409. Real
-  versioning would mean splitting `File` into a logical document plus a `FileVersion` row
-  holding `storageKey`, size and version number, and teaching every listing, search and stream
-  path to resolve "current version" — a data-model change too broad to bolt on late
 - **`EDITOR` role enforcement** — modelled, not wired up; sharing is read-only by design
 - **A "shared with me" listing** — recipients reach shared items by link; shares do not surface
   in their own Data Rooms list
