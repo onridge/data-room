@@ -81,3 +81,11 @@ service.
 - Read access accepts ownership *or* an active share (`getAccessible*`); writes are strictly
   owner-only (`getOwned*`). The two are separate helpers so a share can never satisfy a write.
 - Prisma is pinned to 6.x — see the comment in `prisma/schema.prisma` before upgrading.
+- Rate limited with `@nestjs/throttler`: 120 req/min globally, tightened to 5/min on the auth
+  routes, 30/min on public share links, and 20/min on share creation. Over the limit returns
+  429. The counters are in-memory, so with more than one API instance each would count
+  separately — a shared store is the fix at that point.
+- Uploads are capped at 50 MB, enforced inside the signed upload token so the blob store itself
+  rejects an oversized file. The frontend checks the same limit only to fail fast.
+- Configuration that would be dangerous to guess at fails closed: `JWT_SECRET`, `WEB_ORIGIN`
+  and `GOOGLE_CLIENT_ID` all throw rather than falling back to a default.

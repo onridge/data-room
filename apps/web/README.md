@@ -30,7 +30,8 @@ must be set *before* the build. On Vercel, changing one requires a redeploy to t
 src/
   pages/        one component per route
   components/   dialogs and shared pieces; ui/ holds shadcn primitives
-  hooks/        useFileUpload — validation, progress, drag & drop, post-upload polling
+  hooks/        useFileUpload  — validation, progress, drag & drop, post-upload polling
+                useFileSearch  — debounced data-room-wide file-name search
   lib/          API clients (one module per resource), auth context, formatters
 ```
 
