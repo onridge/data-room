@@ -226,7 +226,14 @@ export class FilesService {
     res: Response,
     versionId?: string,
   ) {
-    await this.getAccessibleFile(userId, dataRoomId, fileId);
+    // Asking for a specific revision is part of the history, so it takes
+    // ownership. Sharing grants the current version of a document, not
+    // everything it used to say.
+    if (versionId) {
+      await this.getOwnedFile(userId, dataRoomId, fileId);
+    } else {
+      await this.getAccessibleFile(userId, dataRoomId, fileId);
+    }
 
     const version = versionId
       ? await this.prisma.fileVersion.findFirst({ where: { id: versionId, fileId } })
@@ -245,8 +252,11 @@ export class FilesService {
     Readable.fromWeb(result.stream as unknown as NodeReadableStream).pipe(res);
   }
 
-  async listVersions(userId: string, dataRoomId: string, fileId: string) {
-    const file = await this.getAccessibleFile(userId, dataRoomId, fileId);
+  // Owner-only, unlike viewing. Replacing a version is a normal way to take
+  // something out of a document, so whoever a file is shared with must not
+  // be able to enumerate what it replaced.
+  async listVersions(ownerId: string, dataRoomId: string, fileId: string) {
+    const file = await this.getOwnedFile(ownerId, dataRoomId, fileId);
     const versions = await this.prisma.fileVersion.findMany({
       where: { fileId, status: 'READY' },
       select: {
