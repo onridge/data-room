@@ -1,7 +1,8 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { OAuth2Client } from 'google-auth-library';
+import type { LoginTicket } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -12,10 +13,24 @@ interface AuthUser {
   name: string;
 }
 
+// Fail closed on a missing client ID, same treatment as JWT_SECRET and
+// WEB_ORIGIN. Without it `verifyIdToken` gets `audience: undefined`, which
+// silently accepts a token minted for *any* Google app — an authentication
+// bypass rather than a misconfiguration.
+const getGoogleClientId = (): string => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    throw new Error('GOOGLE_CLIENT_ID is not set');
+  }
+  return clientId;
+};
+
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -50,10 +65,25 @@ export class AuthService {
   }
 
   async loginWithGoogle(idToken: string) {
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    // verifyIdToken throws on anything it dislikes — expired token, wrong
+    // audience, bad signature. Uncaught, that surfaced as a bare 500
+    // "Internal server error" with nothing in the logs, which made a failing
+    // Google sign-in impossible to diagnose from either end. The caller gets
+    // a 401; the actual reason goes to the server log, not the response.
+    // Resolved before the try, so a missing client ID surfaces as a server
+    // error instead of being caught below and reported as a bad token.
+    const audience = getGoogleClientId();
+
+    let ticket: LoginTicket;
+    try {
+      ticket = await googleClient.verifyIdToken({ idToken, audience });
+    } catch (error) {
+      this.logger.warn(
+        `Google ID token rejected: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new UnauthorizedException('Google sign-in failed');
+    }
+
     const payload = ticket.getPayload();
     if (!payload?.email) {
       throw new UnauthorizedException('Invalid Google token');

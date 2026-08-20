@@ -57,7 +57,8 @@ different platforms and share no code, so a shared root would only add indirecti
 - pnpm
 - A PostgreSQL database
 - A Vercel Blob store (free tier is enough)
-- A Google OAuth client ID, if you want the Google button to work
+- A Google OAuth client ID, if you want the Google button to work — see
+  [Google Sign-In](#google-sign-in) below, which needs console setup beyond the ID itself
 
 ### Backend
 
@@ -69,8 +70,9 @@ pnpm prisma migrate deploy   # apply migrations to your database
 pnpm start:dev               # http://localhost:3000
 ```
 
-`JWT_SECRET` is mandatory — the API deliberately refuses to boot without it rather than falling
-back to a default. Generate one with `openssl rand -hex 32`.
+`JWT_SECRET` and `WEB_ORIGIN` are mandatory — the API deliberately refuses to boot without
+either, rather than falling back to a default secret or to a CORS policy that allows every
+origin. Generate a secret with `openssl rand -hex 32`.
 
 ### Frontend
 
@@ -80,6 +82,25 @@ pnpm install
 cp .env.example .env.local   # VITE_API_URL should point at the API above
 pnpm dev                     # http://localhost:5173
 ```
+
+### Google Sign-In
+
+The button is wired up on both pages, but it only works once the OAuth client is configured on
+Google's side — the code alone is not enough. In the Google Cloud console:
+
+1. **APIs & Services → Credentials → OAuth 2.0 Client ID** (type *Web application*). Copy the
+   client ID into `GOOGLE_CLIENT_ID` (API) and `VITE_GOOGLE_CLIENT_ID` (web) — they must match,
+   since the API verifies that the token's audience is exactly this client.
+2. **Authorised JavaScript origins** must list every origin the app is served from, with no
+   trailing slash and no path: `http://localhost:5173` for local work, plus the deployed
+   frontend URL. Google refuses to render the button on an origin that is not listed.
+3. **OAuth consent screen → Audience.** While the app is in *Testing*, only accounts explicitly
+   added under *Test users* can sign in; everyone else is rejected. To let anyone with a Google
+   account sign in, **Publish app**. For the `email`/`profile` scopes this app uses, publishing
+   takes effect immediately and needs no Google review.
+
+Because `VITE_*` variables are inlined at build time, changing the client ID on the frontend
+requires a rebuild, not just a restart.
 
 ### A note on uploads in local development
 
