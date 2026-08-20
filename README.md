@@ -27,6 +27,10 @@ page navigation, rename with conflict detection, move between folders, delete.
 **Search** — find a file by name across an entire Data Room, not just the open folder. Each
 result shows the folder path it lives in, and clicking that path jumps straight there.
 
+**Versioning** — uploading a file whose name already exists in that folder adds a version
+instead of a renamed copy. Listings, search and share links always resolve to the current
+version; the owner can open the full history and view any earlier revision.
+
 **Sharing** — share a Data Room, a folder, or a single file. Two modes: a public link that
 anyone can open without an account, and a permissioned share granted to specific registered
 users. Access cascades: sharing a Data Room or folder shares everything nested inside it. The
@@ -69,7 +73,7 @@ pnpm prisma migrate deploy   # apply migrations to your database
 pnpm start:dev               # http://localhost:3000
 ```
 
-`JWT_SECRET` is mandatory — the API deliberately refuses to boot without it rather than falling
+`JWT_SECRET` and `WEB_ORIGIN` are mandatory — the API deliberately refuses to boot without
 back to a default. Generate one with `openssl rand -hex 32`.
 
 ### Frontend
@@ -125,10 +129,11 @@ never accidentally satisfied by a share.
 whether it truly does not exist or simply is not yours. A 403 would confirm the resource exists,
 which leaks information across tenants.
 
-**Name conflicts, resolved differently by context.** Uploading a batch auto-renames on collision
-(`Report.pdf` → `Report (1).pdf`) because there is no sensible place to prompt mid-batch.
-Explicitly renaming a single file rejects with a 409 and a clear message, because the user is
-right there and should decide. Uniqueness is enforced in the database, not just in application
+**Name conflicts, resolved differently by context.** Uploading over an existing name adds a
+version to that document rather than creating `Report (1).pdf` beside it — in due diligence, the
+second upload of a file almost always *is* a newer draft of the same document, and silently
+renaming it hides that. Explicitly renaming a single file still rejects with a 409 and a clear
+message, because there the user is right there and should decide. Uniqueness is enforced in the database, not just in application
 code — including a hand-written partial index for root-level items, since Postgres treats
 `NULL` parents as always distinct and the plain unique constraint would not catch duplicates
 there.
@@ -144,13 +149,15 @@ NestJS's CommonJS build. Documented inline in `schema.prisma` so nobody "helpful
 erDiagram
     User ||--o{ DataRoom : owns
     User ||--o{ Folder : created
-    User ||--o{ File : uploaded
+    User ||--o{ File : created
+    User ||--o{ FileVersion : uploaded
     User ||--o{ Share : created
     User ||--o{ ShareGrant : "granted to"
     DataRoom ||--o{ Folder : contains
     DataRoom ||--o{ File : contains
     Folder ||--o{ Folder : "nests (parentId)"
     Folder ||--o{ File : contains
+    File ||--o{ FileVersion : "has versions"
     Share ||--o{ ShareGrant : has
 
     User {
@@ -175,11 +182,18 @@ erDiagram
     File {
         string id PK
         string name
+        string dataRoomId FK
+        string folderId FK "null = data room root"
+        string createdById FK
+        string currentVersionId FK "null until first upload confirms"
+    }
+    FileVersion {
+        string id PK
+        string fileId FK
+        int versionNumber "1-based, per file"
         bigint sizeBytes
         string mimeType
         string storageKey UK "blob URL"
-        string dataRoomId FK
-        string folderId FK "null = data room root"
         string uploadedById FK
         enum status "PENDING | READY"
     }
@@ -341,12 +355,6 @@ unimplemented features.
 
 Called out explicitly, since the brief asks for a design without unimplemented features on show:
 
-- **File versioning** on name conflicts (optional extra credit) — a deliberate omission rather
-  than a missing feature. Conflicts are resolved instead by Drive-style auto-renaming on upload
-  (`Report.pdf` → `Report (1).pdf`) and by rejecting an explicit rename with a 409. Real
-  versioning would mean splitting `File` into a logical document plus a `FileVersion` row
-  holding `storageKey`, size and version number, and teaching every listing, search and stream
-  path to resolve "current version" — a data-model change too broad to bolt on late
 - **`EDITOR` role enforcement** — modelled, not wired up; sharing is read-only by design
 - **A "shared with me" listing** — recipients reach shared items by link; shares do not surface
   in their own Data Rooms list

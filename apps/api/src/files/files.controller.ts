@@ -56,14 +56,27 @@ export class FilesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get(':fileId/versions')
+  versions(
+    @CurrentUser() user: RequestUser,
+    @Param('dataRoomId') dataRoomId: string,
+    @Param('fileId') fileId: string,
+  ) {
+    return this.filesService.listVersions(user.userId, dataRoomId, fileId);
+  }
+
+  // ?version= opens a specific revision; without it the caller gets whatever
+  // is current, which is what every listing and share link asks for.
+  @UseGuards(JwtAuthGuard)
   @Get(':fileId/content')
   content(
     @CurrentUser() user: RequestUser,
     @Param('dataRoomId') dataRoomId: string,
     @Param('fileId') fileId: string,
     @Res() res: Response,
+    @Query('version') versionId?: string,
   ) {
-    return this.filesService.streamContent(user.userId, dataRoomId, fileId, res);
+    return this.filesService.streamContent(user.userId, dataRoomId, fileId, res, versionId);
   }
 
   @UseGuards(JwtAuthGuard)

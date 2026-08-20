@@ -5,6 +5,7 @@ import {
   FileText,
   Folder as FolderIcon,
   FolderInput,
+  History,
   Pencil,
   Search,
   Share2,
@@ -27,6 +28,7 @@ import { UploadPanel } from '../components/UploadPanel';
 import { ShareDialog } from '../components/ShareDialog';
 import type { ShareResourceType } from '../lib/shares';
 import { PdfViewerDialog } from '../components/PdfViewerDialog';
+import { VersionHistoryDialog } from '../components/VersionHistoryDialog';
 import { CreateFolderDialog } from '../components/CreateFolderDialog';
 import { RenameDialog } from '../components/RenameDialog';
 import { DeleteFolderDialog } from '../components/DeleteFolderDialog';
@@ -52,12 +54,15 @@ export const DataRoomDetailPage = () => {
   const [renameFileTarget, setRenameFileTarget] = useState<FileEntry | null>(null);
   const [deleteFileTarget, setDeleteFileTarget] = useState<FileEntry | null>(null);
   const [moveFileTarget, setMoveFileTarget] = useState<FileEntry | null>(null);
+  const [versionsTarget, setVersionsTarget] = useState<FileEntry | null>(null);
   const [shareTarget, setShareTarget] = useState<{
     resourceType: ShareResourceType;
     resourceId: string;
     name: string;
   } | null>(null);
-  const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(null);
+  const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(
+    null,
+  );
 
   const search = useFileSearch({ dataRoomId: id });
 
@@ -339,6 +344,17 @@ export const DataRoomDetailPage = () => {
                     >
                       <Eye className="size-3.5" />
                     </button>
+                    {file.versionNumber > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => setVersionsTarget(file)}
+                        className="grid size-7 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="Version history"
+                        title={`${file.versionNumber} versions`}
+                      >
+                        <History className="size-3.5" />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setMoveFileTarget(file)}
@@ -467,6 +483,23 @@ export const DataRoomDetailPage = () => {
               prev ? { ...prev, files: prev.files.filter((f) => f.id !== fileId) } : prev,
             );
             setDeleteFileTarget(null);
+          }}
+        />
+      ) : null}
+
+      {versionsTarget && id ? (
+        <VersionHistoryDialog
+          target={versionsTarget}
+          dataRoomId={id}
+          onClose={() => setVersionsTarget(null)}
+          onViewVersion={async (versionId, label) => {
+            if (!accessToken) return;
+            try {
+              const objectUrl = await viewFile(accessToken, id, versionsTarget.id, versionId);
+              setPdfViewerTarget({ url: objectUrl, name: label });
+            } catch {
+              // Same as the main view button: failing to open is silent.
+            }
           }}
         />
       ) : null}

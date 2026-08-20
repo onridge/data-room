@@ -21,7 +21,7 @@ import { MoveFileDto } from './dto/move-file.dto';
 import { ShareAccessService } from '../shares/share-access.service';
 
 interface UploadTokenPayload {
-  fileId: string;
+  versionId: string;
 }
 
 // Enforced in the upload token itself, so the blob store rejects an
@@ -72,30 +72,6 @@ export class FilesService {
       return payload.sub;
     } catch {
       throw new UnauthorizedException();
-    }
-  }
-
-  // Drive-style auto-rename on conflict ("Report.pdf" -> "Report (1).pdf")
-  // — uploads happen in a batch with no per-file prompt, unlike the
-  // explicit rename endpoint which can just reject with 409.
-  private async resolveName(
-    dataRoomId: string,
-    folderId: string | null,
-    desired: string,
-  ) {
-    const dotIndex = desired.lastIndexOf('.');
-    const base = dotIndex > 0 ? desired.slice(0, dotIndex) : desired;
-    const ext = dotIndex > 0 ? desired.slice(dotIndex) : '';
-
-    let candidate = desired;
-    let attempt = 1;
-    for (;;) {
-      const existing = await this.prisma.file.findFirst({
-        where: { dataRoomId, folderId, name: candidate },
-      });
-      if (!existing) return candidate;
-      candidate = `${base} (${attempt})${ext}`;
-      attempt += 1;
     }
   }
 
@@ -190,13 +166,20 @@ export class FilesService {
       this.prisma.file.findMany({
         where: {
           dataRoomId,
-          status: 'READY',
+          // A document with no current version is one whose first upload
+          // never completed — the equivalent of the old status = READY test.
+          currentVersionId: { not: null },
           name: {
             contains: escapeLikeMetacharacters(query),
             mode: 'insensitive',
           },
         },
-        select: { id: true, name: true, sizeBytes: true, folderId: true },
+        select: {
+          id: true,
+          name: true,
+          folderId: true,
+          currentVersion: { select: { sizeBytes: true } },
+        },
         orderBy: { name: 'asc' },
         take: SEARCH_RESULT_LIMIT,
       }),
@@ -220,33 +203,78 @@ export class FilesService {
       return path;
     };
 
-    return files.map((file) => ({ ...file, path: buildPath(file.folderId) }));
+    // Flattened back to the shape the client already consumes: a search
+    // result is about the document, and its size is that of what you'd get
+    // by opening it.
+    return files.map(({ currentVersion, ...file }) => ({
+      ...file,
+      sizeBytes: currentVersion?.sizeBytes ?? 0n,
+      path: buildPath(file.folderId),
+    }));
   }
 
   // Blob access is 'private', so the stored URL isn't fetchable directly —
   // this proxies the content through our own auth instead of handing out a
   // signed URL, keeping the same JwtAuthGuard check as everything else.
-  async streamContent(userId: string, dataRoomId: string, fileId: string, res: Response) {
-    const file = await this.getAccessibleFile(userId, dataRoomId, fileId);
-    if (file.status !== 'READY') {
+  // versionId is optional: without it the caller gets whatever is current,
+  // which is what listings and share links want. The version history passes
+  // one explicitly to open an older revision.
+  async streamContent(
+    userId: string,
+    dataRoomId: string,
+    fileId: string,
+    res: Response,
+    versionId?: string,
+  ) {
+    await this.getAccessibleFile(userId, dataRoomId, fileId);
+
+    const version = versionId
+      ? await this.prisma.fileVersion.findFirst({ where: { id: versionId, fileId } })
+      : await this.prisma.fileVersion.findFirst({ where: { currentOf: { id: fileId } } });
+
+    if (!version || version.status !== 'READY') {
       throw new NotFoundException('File not found');
     }
-    const result = await get(file.storageKey, { access: 'private' });
+    const result = await get(version.storageKey, { access: 'private' });
     if (!result || result.statusCode !== 200) {
       throw new NotFoundException('File not found');
     }
-    res.setHeader('Content-Type', file.mimeType);
+    const file = await this.prisma.file.findUniqueOrThrow({ where: { id: fileId } });
+    res.setHeader('Content-Type', version.mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.name)}"`);
     Readable.fromWeb(result.stream as unknown as NodeReadableStream).pipe(res);
   }
 
+  async listVersions(userId: string, dataRoomId: string, fileId: string) {
+    const file = await this.getAccessibleFile(userId, dataRoomId, fileId);
+    const versions = await this.prisma.fileVersion.findMany({
+      where: { fileId, status: 'READY' },
+      select: {
+        id: true,
+        versionNumber: true,
+        sizeBytes: true,
+        createdAt: true,
+        uploadedBy: { select: { name: true } },
+      },
+      orderBy: { versionNumber: 'desc' },
+    });
+    return versions.map((version) => ({
+      ...version,
+      uploadedBy: version.uploadedBy.name,
+      isCurrent: version.id === file.currentVersionId,
+    }));
+  }
+
   async remove(ownerId: string, dataRoomId: string, fileId: string) {
-    const file = await this.getOwnedFile(ownerId, dataRoomId, fileId);
-    // A file stuck in PENDING never got a real blob (storageKey is still the
-    // placeholder), so there's nothing to delete from the store.
-    if (file.status === 'READY') {
-      await del(file.storageKey);
-    }
+    await this.getOwnedFile(ownerId, dataRoomId, fileId);
+    // Every version has its own blob, so deleting the document means
+    // deleting all of them. A version stuck in PENDING never got a real blob
+    // (storageKey is still the placeholder), so it has nothing to remove.
+    const versions = await this.prisma.fileVersion.findMany({
+      where: { fileId, status: 'READY' },
+      select: { storageKey: true },
+    });
+    await Promise.all(versions.map((version) => del(version.storageKey)));
     await this.prisma.file.delete({ where: { id: fileId } });
   }
 
@@ -277,28 +305,49 @@ export class FilesService {
           }
         }
 
-        const finalName = await this.resolveName(
-          dataRoomId,
-          folderId ?? null,
-          pathname,
-        );
-
-        const file = await this.prisma.file.create({
-          data: {
-            name: finalName,
-            sizeBytes: 0,
-            mimeType: 'application/pdf',
-            // Placeholder until onUploadCompleted swaps in the real blob URL —
-            // storageKey is unique, so it can't be left blank in the meantime.
-            storageKey: `pending:${randomUUID()}`,
-            dataRoomId,
-            folderId: folderId ?? null,
-            uploadedById: userId,
-            status: 'PENDING',
-          },
+        // Uploading over an existing name adds a version to that document
+        // rather than creating "Report (1).pdf" beside it. Which of the two
+        // happens is decided here, by whether the name is already taken in
+        // this folder.
+        const existing = await this.prisma.file.findFirst({
+          where: { dataRoomId, folderId: folderId ?? null, name: pathname },
+          include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
         });
 
-        const payload: UploadTokenPayload = { fileId: file.id };
+        const version = existing
+          ? await this.prisma.fileVersion.create({
+              data: {
+                fileId: existing.id,
+                versionNumber: (existing.versions[0]?.versionNumber ?? 0) + 1,
+                sizeBytes: 0,
+                mimeType: 'application/pdf',
+                // Placeholder until onUploadCompleted swaps in the real blob
+                // URL — storageKey is unique, so it can't be blank meanwhile.
+                storageKey: `pending:${randomUUID()}`,
+                uploadedById: userId,
+                status: 'PENDING',
+              },
+            })
+          : await this.prisma.fileVersion.create({
+              data: {
+                versionNumber: 1,
+                sizeBytes: 0,
+                mimeType: 'application/pdf',
+                storageKey: `pending:${randomUUID()}`,
+                status: 'PENDING',
+                uploadedBy: { connect: { id: userId } },
+                file: {
+                  create: {
+                    name: pathname,
+                    dataRoomId,
+                    folderId: folderId ?? null,
+                    createdById: userId,
+                  },
+                },
+              },
+            });
+
+        const payload: UploadTokenPayload = { versionId: version.id };
         return {
           allowedContentTypes: ['application/pdf'],
           maximumSizeInBytes: MAX_UPLOAD_SIZE_BYTES,
@@ -308,18 +357,26 @@ export class FilesService {
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
         if (!tokenPayload) return;
-        const { fileId } = JSON.parse(tokenPayload) as UploadTokenPayload;
+        const { versionId } = JSON.parse(tokenPayload) as UploadTokenPayload;
         // PutBlobResult doesn't include size — head() gets the authoritative
         // value from the store rather than trusting a client-supplied one.
         const info = await head(blob.url);
-        await this.prisma.file.update({
-          where: { id: fileId },
+        // Promoting the version to "current" is what publishes the upload:
+        // until this runs the document either doesn't appear at all (first
+        // upload) or still serves its previous version. Both happen together
+        // so a listing can never see a half-written version.
+        const version = await this.prisma.fileVersion.update({
+          where: { id: versionId },
           data: {
             storageKey: blob.url,
             sizeBytes: info.size,
             mimeType: blob.contentType,
             status: 'READY',
           },
+        });
+        await this.prisma.file.update({
+          where: { id: version.fileId },
+          data: { currentVersionId: version.id },
         });
       },
     });

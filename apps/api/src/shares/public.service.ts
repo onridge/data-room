@@ -71,13 +71,21 @@ export class PublicService {
         orderBy: { name: 'asc' },
       }),
       this.prisma.file.findMany({
-        where: { dataRoomId, folderId: targetFolderId ?? null, status: FileStatus.READY },
-        select: { id: true, name: true, sizeBytes: true },
+        where: { dataRoomId, folderId: targetFolderId ?? null, currentVersionId: { not: null } },
+        select: { id: true, name: true, currentVersion: { select: { sizeBytes: true } } },
         orderBy: { name: 'asc' },
       }),
     ]);
 
-    return { folders, files };
+    // Version history is owner-only — a public visitor sees the current
+    // document and nothing about what it replaced.
+    return {
+      folders,
+      files: files.map(({ currentVersion, ...file }) => ({
+        ...file,
+        sizeBytes: currentVersion?.sizeBytes ?? 0n,
+      })),
+    };
   }
 
   async streamFileContent(token: string, fileId: string, res: Response) {
@@ -86,15 +94,20 @@ export class PublicService {
     if (!within) {
       throw new NotFoundException('File not found');
     }
-    const file = await this.prisma.file.findUnique({ where: { id: fileId } });
-    if (!file || file.status !== FileStatus.READY) {
+    // Always the current version: a public link points at the document, and
+    // following it should never expose a revision the owner has replaced.
+    const file = await this.prisma.file.findUnique({
+      where: { id: fileId },
+      include: { currentVersion: true },
+    });
+    if (!file?.currentVersion || file.currentVersion.status !== FileStatus.READY) {
       throw new NotFoundException('File not found');
     }
-    const result = await get(file.storageKey, { access: 'private' });
+    const result = await get(file.currentVersion.storageKey, { access: 'private' });
     if (!result || result.statusCode !== 200) {
       throw new NotFoundException('File not found');
     }
-    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Type', file.currentVersion.mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.name)}"`);
     Readable.fromWeb(result.stream as unknown as NodeReadableStream).pipe(res);
   }

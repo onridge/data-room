@@ -74,13 +74,37 @@ export const moveFile = async (
   return data;
 };
 
+export interface FileVersion {
+  id: string;
+  versionNumber: number;
+  sizeBytes: string;
+  createdAt: string;
+  uploadedBy: string;
+  isCurrent: boolean;
+}
+
+export const getFileVersions = async (token: string, dataRoomId: string, fileId: string) => {
+  const { data } = await api.get<FileVersion[]>(
+    `/data-rooms/${dataRoomId}/files/${fileId}/versions`,
+    { headers: authHeader(token) },
+  );
+  return data;
+};
+
 // Blob access is private, so the file has to be fetched through our own
 // auth rather than opened by URL directly — the object URL below is what
 // actually gets opened/embedded.
-export const viewFile = async (token: string, dataRoomId: string, fileId: string) => {
+// versionId opens a specific revision; omitting it gets whatever is current.
+export const viewFile = async (
+  token: string,
+  dataRoomId: string,
+  fileId: string,
+  versionId?: string,
+) => {
   const { data } = await api.get(`/data-rooms/${dataRoomId}/files/${fileId}/content`, {
     headers: authHeader(token),
     responseType: 'blob',
+    params: versionId ? { version: versionId } : undefined,
   });
   return URL.createObjectURL(data as Blob);
 };
