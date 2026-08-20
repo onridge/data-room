@@ -33,7 +33,9 @@ export const PublicSharePage = () => {
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(null);
+  const [pdfViewerTarget, setPdfViewerTarget] = useState<{ url: string; name: string } | null>(
+    null,
+  );
 
   const currentFolderId = breadcrumb.at(-1)?.id;
 
@@ -53,7 +55,14 @@ export const PublicSharePage = () => {
     setLoadError(null);
     getPublicContents(token, currentFolderId)
       .then(setContents)
-      .catch((err) => setLoadError(err instanceof ApiError ? err.message : 'Failed to load'))
+      .catch((err) => {
+        // Drop the previous folder's contents on failure. The owner can
+        // delete a folder while someone is browsing it, and keeping the
+        // stale response left the page insisting "1 folder, 0 files" right
+        // next to "Shared item not found".
+        setContents(null);
+        setLoadError(err instanceof ApiError ? err.message : 'Failed to load');
+      })
       .finally(() => setIsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, shareInfo, currentFolderId]);
@@ -116,7 +125,8 @@ export const PublicSharePage = () => {
     );
   }
 
-  const totalSizeBytes = contents?.files.reduce((sum, file) => sum + Number(file.sizeBytes), 0) ?? 0;
+  const totalSizeBytes =
+    contents?.files.reduce((sum, file) => sum + Number(file.sizeBytes), 0) ?? 0;
 
   return (
     <div className="p-8">
@@ -147,9 +157,14 @@ export const PublicSharePage = () => {
         ))}
       </div>
 
-      <h1 className="mt-2 text-page-title font-semibold text-foreground">
-        {breadcrumb.at(-1)?.name ?? shareInfo.name}
-      </h1>
+      {/* The title names whatever the visitor navigated into, so it has to
+          go when that thing turns out to be gone — otherwise the page reads
+          as a folder that exists and simply failed to load. */}
+      {loadError ? null : (
+        <h1 className="mt-2 text-page-title font-semibold text-foreground">
+          {breadcrumb.at(-1)?.name ?? shareInfo.name}
+        </h1>
+      )}
       {contents ? (
         <p className="mt-1 text-modal-caption text-muted-foreground">
           {contents.folders.length} folder{contents.folders.length === 1 ? '' : 's'} ·{' '}
